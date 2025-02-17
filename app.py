@@ -65,8 +65,8 @@ def process_uploaded_file(uploaded_file):
 
 
 def main():
-    st.set_page_config(page_title="CSV Data Analysis Tool", layout="wide")
-    st.title("CSV Data Analysis Tool")
+    st.set_page_config(page_title="Finance-AI-LLM", layout="wide")
+    st.title("Finance-AI-LLM")
 
     # Initialize session state first
     initialize_session_state()
@@ -130,7 +130,7 @@ def main():
     # File upload section
     st.header("Data Upload")
     uploaded_files = st.file_uploader(
-        "Upload your CSV files", type=["csv"], accept_multiple_files=True
+        "Upload your CSV files", type=["csv"], accept_multiple_files=True,help="Currently CSV only Supported. TODO"
     )
 
     if uploaded_files:
@@ -147,109 +147,10 @@ def main():
             st.success(
                 f"Currently viewing analysis for: {st.session_state.current_file}"
             )
-
-        # Display data analysis for the current file
-        if st.session_state.current_file:
-            data_processor = st.session_state.data_processors[
-                st.session_state.current_file
-            ]
-
-            with st.expander(
-                f"Analysis for {st.session_state.current_file}", expanded=True
-            ):
-                # Initialize visualizer for this dataset
-                visualizer = Visualizer(data_processor)
-
-                # Summary metrics
-                st.subheader("Summary Metrics")
-                metrics = data_processor.get_summary_metrics()
-                display_metrics(metrics)
-
-                # Generate Report button
-                if st.button(
-                    f"Generate Report for {st.session_state.current_file}",
-                    key=f"report_{st.session_state.current_file}",
-                ):
-                    with st.spinner("Generating report..."):
-                        # Get AI-generated insights
-                        if st.session_state.conversation_handler:
-                            insights = st.session_state.conversation_handler.process_query(
-                                f"Provide a comprehensive analysis of the data in {st.session_state.current_file}. "
-                                "Include key trends, notable patterns, and important observations."
-                            )
-                        else:
-                            insights = "AI analysis not available. Please ensure the conversation handler is properly initialized."
-
-                        # Generate and display the report
-                        st.session_state.report_generator.generate_report(
-                            metrics,
-                            insights,
-                            filename=f"report_{st.session_state.current_file.replace('.csv', '')}.pdf",
-                        )
-
-                # Visualization section
-                st.subheader("Visualizations")
-
-                numeric_cols = data_processor.numeric_columns
-                if numeric_cols:
-                    numeric_col = st.selectbox(
-                        f"Select numeric column for analysis ({st.session_state.current_file})",
-                        numeric_cols,
-                        key=f"numeric_{st.session_state.current_file}",
-                    )
-
-                    if numeric_col:
-                        tabs = st.tabs(
-                            ["Time Series", "Category Distribution", "Monthly Analysis"]
-                        )
-
-                        with tabs[0]:
-                            if data_processor.date_column:
-                                with st.spinner(
-                                    "Creating time series visualization..."
-                                ):
-                                    fig = visualizer.create_time_series(numeric_col)
-                                    if fig:
-                                        st.plotly_chart(fig, use_container_width=True)
-                            else:
-                                st.info(
-                                    "No date column detected for time series visualization"
-                                )
-
-                        with tabs[1]:
-                            if data_processor.categorical_columns:
-                                category_col = st.selectbox(
-                                    "Select category column",
-                                    data_processor.categorical_columns,
-                                    key=f"category_{st.session_state.current_file}",
-                                )
-                                if category_col:
-                                    with st.spinner(
-                                        "Creating category distribution..."
-                                    ):
-                                        fig = visualizer.create_category_distribution(
-                                            numeric_col, category_col
-                                        )
-                                        st.plotly_chart(fig, use_container_width=True)
-                            else:
-                                st.info(
-                                    "No categorical columns detected for distribution analysis"
-                                )
-
-                        with tabs[2]:
-                            if "month" in data_processor.df.columns:
-                                with st.spinner("Creating monthly comparison..."):
-                                    fig = visualizer.create_monthly_comparison(
-                                        numeric_col
-                                    )
-                                    if fig:
-                                        st.plotly_chart(fig, use_container_width=True)
-                            else:
-                                st.info("No monthly data available for comparison")
-
+        
         # Chat interface
         st.markdown("---")
-        st.header("Chat with Your Data")
+        st.header("Chat with Data")
 
         chat_container = st.container()
 

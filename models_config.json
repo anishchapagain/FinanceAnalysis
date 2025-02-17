@@ -1,0 +1,51 @@
+[
+    {
+        "name": "OpenAI GPT-4",
+        "type": "openai",
+        "model": "gpt-4",
+        "api_key": "your_openai_api_key",
+        "base_url": null
+    },
+    {
+        "name": "Local Llama3.2",
+        "type": "ollama",
+        "model": "llama3.2:latest",
+        "api_key": "ollama",
+        "base_url": "http://localhost:11434"
+    },
+    {
+        "name": "Local DeepSeek-R1-1.5B",
+        "type": "ollama",
+        "model": "deepseek-r1:1.5b",
+        "api_key": "ollama",
+        "base_url": "http://localhost:11434"
+    },
+    {
+        "name": "Local DeepSeek-R1-8B",
+        "type": "ollama",
+        "model": "deepseek-r1:8b",
+        "api_key": "ollama",
+        "base_url": "http://localhost:11434"
+    },
+    {
+        "name": "Local Gemma-2B",
+        "type": "ollama",
+        "model": "gemma:2b",
+        "api_key": "ollama",
+        "base_url": "http://localhost:11434"
+    },
+    {
+        "name": "Local Qwen2.5-Co-7B",
+        "type": "ollama",
+        "model": "qwen2.5-coder:7b",
+        "api_key": "ollama",
+        "base_url": "http://localhost:11434"
+    },
+    {
+        "name": "Local Qwen2.5-L",
+        "type": "ollama",
+        "model": "qwen2.5:latest",
+        "api_key": "ollama",
+        "base_url": "http://localhost:11434"
+    }
+]

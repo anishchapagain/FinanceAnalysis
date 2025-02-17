@@ -1,13 +1,11 @@
 """
 Configuration settings for the application.
 """
-
+import json
 import os
 from dotenv import load_dotenv
 from typing import Dict, Any
-# from langchain_community.embeddings import OllamaEmbeddings
 from langchain_ollama import OllamaEmbeddings
-
 
 load_dotenv()
 
@@ -27,13 +25,14 @@ class Config:
 
     # OPENAI_EMBEDDING_MODEL = "nomic-embed-text:latest"
     OLLAMA_BASE_URL = "http://localhost:11434/v1"  # Changed: Removed /v1
-    OLLAMA_MODEL = "llama3.2:latest" # deepseek-r1:1.5b | deepseek-r1:8b
-    OLLAMA_MODEL = "deepseek-r1:1.5b"
-    OLLAMA_MODEL = "gemma:2b"
-    OLLAMA_MODEL = "qwen2.5-coder:7b"
-    # OLLAMA_MODEL = "llama3.2"  # Changed: Using exact model name
+    # OLLAMA_MODEL = "llama3.2:latest" # deepseek-r1:1.5b | deepseek-r1:8b
+    # OLLAMA_MODEL = "deepseek-r1:1.5b"
+    # OLLAMA_MODEL = "deepseek-r1:8b"
+    # OLLAMA_MODEL = "gemma:2b"
+    # OLLAMA_MODEL = "qwen2.5-coder:7b"
+    # OLLAMA_MODEL = "qwen2.5:latest"
+    OLLAMA_MODEL = "llama3.2"  # Changed: Using exact model name
     OPENAI_EMBEDDING_MODEL = OllamaEmbeddings(model=OLLAMA_MODEL) # OllamaEmbeddings(model="nomic-embed-text:latest")
-    print(f"{OPENAI_EMBEDDING_MODEL}")
 
     # ChromaDB Configuration
     CHROMA_COLLECTION_NAME = "financial_data"
@@ -45,6 +44,25 @@ class Config:
 
     # Query Configuration
     DEFAULT_N_RESULTS = 25  # TODO
+
+    #------ TODO
+    """
+    # Load model configurations from JSON file
+    with open("models_config.json", "r") as file:
+        models_data = json.load(file)
+
+    # Model Settings
+    AVAILABLE_MODELS: Dict[str, Dict[str, Any]] = {
+        model["name"]: {
+            "type": model["type"],
+            "model": model["model"],
+            "api_key": model["api_key"],
+            "base_url": model["base_url"],
+        }
+        for model in models_data
+    }
+    """
+    # TODO ---------
 
     # Model Settings
     AVAILABLE_MODELS: Dict[str, Dict[str, Any]] = {

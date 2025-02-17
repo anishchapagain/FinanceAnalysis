@@ -65,7 +65,6 @@ class DataEmbedder:
         try:
             # First, try to create a new client
             self.client = chromadb.PersistentClient(path=self.persist_dir)
-            print(self.client)
             # existing_collections = [col.name for col in self.client.list_collections()]
             # print(self.client.get_collection())
             # db = Chroma(persist_directory="./chroma_db", embedding_function=embedding_function)
@@ -181,7 +180,6 @@ class DataEmbedder:
             # Prepare and add data in batches
             batch_size = 100
             for start_idx in range(0, len(df), batch_size):
-                # self.logger.info(f"BAtch: {start_idx}")
                 end_idx = min(start_idx + batch_size, len(df))
                 batch_df = df.iloc[start_idx:end_idx]
 
