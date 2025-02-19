@@ -149,8 +149,8 @@ class ConversationHandler:
             print("\nStep 1: Fetching relevant data from ChromaDB...")
             relevant_data = self.data_embedder.query_data(query)
 
-            # print(f"\nRelevant data structure: {json.dumps(relevant_data, indent=2)}") # DEFAULT
-            print(f"\nRelevant data structure: {'.'*5}") # HIDE
+            print(f"\nRelevant data structure: {json.dumps(relevant_data, indent=2)}") # DEFAULT
+            # print(f"\nRelevant data structure: {'.'*5}") # HIDE
 
             # Validate the response structure
             if not relevant_data:
