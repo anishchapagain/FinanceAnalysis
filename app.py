@@ -7,7 +7,8 @@ from conversation_handler import ConversationHandler
 from report_generator import ReportGenerator
 from utils.logger import Logger
 from models.model_manager import ModelManager
-# from ai_analyzer import AIAnalyzer
+
+# from ai_analyzer import AIAnalyzer 
 
 
 def initialize_session_state():
@@ -225,6 +226,7 @@ def display_metrics(metrics):
                     help=f"Full value: {value:,.2f}",
                 )
 
+# Few-Shot Code
 
 if __name__ == "__main__":
     main()
