@@ -30,8 +30,8 @@ class Config:
     # OLLAMA_MODEL = "deepseek-r1:8b"
     # OLLAMA_MODEL = "gemma:2b"
     # OLLAMA_MODEL = "qwen2.5-coder:7b"
-    # OLLAMA_MODEL = "qwen2.5:latest"
-    OLLAMA_MODEL = "llama3.2"  # Changed: Using exact model name
+    OLLAMA_MODEL = "qwen2.5:latest"
+    # OLLAMA_MODEL = "gemma3:latest"  # Changed: Using exact model name
     OPENAI_EMBEDDING_MODEL = OllamaEmbeddings(model=OLLAMA_MODEL) # OllamaEmbeddings(model="nomic-embed-text:latest")
 
     # ChromaDB Configuration
@@ -72,7 +72,7 @@ class Config:
             "api_key": OPENAI_API_KEY,
             "base_url": None,
         },
-        "Local Llama3.2": {  # Changed: Updated model name
+        "FinanceLLM": {  # Changed: Updated model name
             "type": "ollama",
             "model": OLLAMA_MODEL,
             "api_key": "ollama",

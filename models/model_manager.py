@@ -33,7 +33,7 @@ class ModelManager:
         print("\n=== Initializing ModelManager ===")
 
         self.current_model = "OpenAI GPT-4"
-        self.fallback_model = "Local Llama3.2"
+        self.fallback_model = Config.AVAILABLE_MODELS.get('FinanceLLM','').get('model') #"qwen2.5:latest"
         self.clients: Dict[str, Optional[OpenAI]] = {}
 
         # Initialize clients

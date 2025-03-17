@@ -141,7 +141,7 @@ class ConversationHandler:
     def process_query(self, query: str) -> str:
         """Process a natural language query about the data."""
         print(f"\n{'='*50}")
-        print(f"PROCESSING QUERY: {query}")
+        print(f"PROCESSING QUERY....") #: {query}")
         print(f"{'='*50}")
 
         try:
@@ -149,12 +149,13 @@ class ConversationHandler:
             print("\nStep 1: Fetching relevant data from ChromaDB...")
             relevant_data = self.data_embedder.query_data(query)
 
-            print(f"\nRelevant data structure: {json.dumps(relevant_data, indent=2)}") # DEFAULT
-            # print(f"\nRelevant data structure: {'.'*5}") # HIDE
+            # print(f"\nRelevant data structure: {json.dumps(relevant_data, indent=2)}") # DEFAULT
+            print(f"\nRelevant data structure: {'.'*5}") # HIDE
 
             # Validate the response structure
             if not relevant_data:
                 print("ERROR: No response from data_embedder.query_data")
+                
                 return "I'm having trouble accessing the data. Please try again."
 
             if not isinstance(relevant_data, dict):
@@ -208,20 +209,27 @@ class ConversationHandler:
             print("\nStep 4: Preparing prompt for AI model...")
             system_prompt = """You are a data analysis assistant. Analyze the provided context and answer questions about the data. 
             Important guidelines:
-            - Be specific and include numerical values
-            - Format monetary values with 'NRP' and commas
+            - Be specific and include numerical values do not explain the calculations
+            - Format monetary values with 'NPR' and commas in thousands (e.g., NPR 1,000,000)
+            - For percentages, include the % symbol (e.g., 15%)
+            - Provide clear and concise responses
+            """
+
+            system_old_prompt ="""You are a data analysis assistant. Analyze the provided context and answer questions about the data.
+            Important guidelines:
+            
+            - For calculations involving monetary values, ensure you're using the correct aggregation level
+            - When dealing with project data, aggregate at the project level first
             - Cite the source dataset when providing information
             - If aggregating across multiple records, explain the calculation
             - If the answer requires assumptions, state them clearly
-            - For calculations involving monetary values, ensure you're using the correct aggregation level
-            - When dealing with project data, aggregate at the project level first
             """
 
             messages = [
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"Based on this context:\n{' '.join(context_entries)}\n\nQuestion: {query}",
+                    "content": f"\n Based on this context:\n{' '.join(context_entries)}\n\nQuestion: {query}",
                 },
             ]
 
@@ -247,7 +255,7 @@ class ConversationHandler:
                 response = client.chat.completions.create(
                     model=model_config["model"],  # Use exact model name
                     messages=messages,
-                    temperature=0.2,
+                    temperature=0.1,
                     max_tokens=500,
                 )
             else:
@@ -255,7 +263,7 @@ class ConversationHandler:
                 response = client.chat.completions.create(
                     model=model_config["model"],
                     messages=messages,
-                    temperature=0.2,
+                    temperature=0.1,
                     max_tokens=500,
                 )
 

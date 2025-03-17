@@ -8,7 +8,7 @@ from report_generator import ReportGenerator
 from utils.logger import Logger
 from models.model_manager import ModelManager
 
-# from ai_analyzer import AIAnalyzer 
+from ai_analyzer import AIAnalyzer 
 
 
 def initialize_session_state():
@@ -40,11 +40,15 @@ def process_uploaded_file(uploaded_file):
         success, message = data_processor.load_data(uploaded_file)
 
         if success:
+            print(f"====> {data_processor.df.head()}")
+            """
             # Store the processor with the filename as key
             st.session_state.data_processors[uploaded_file.name] = data_processor
 
             # Always embed the data for new files
             column_info = data_processor.get_column_info()
+            print(f"====> {column_info}")
+
             embedding_success = st.session_state.data_embedder.embed_data(
                 data_processor.df, column_info, source_name=uploaded_file.name
             )
@@ -56,7 +60,9 @@ def process_uploaded_file(uploaded_file):
                 )  # Update current file
                 st.success(f"Successfully processed and embedded {uploaded_file.name}")
             else:
-                st.error(f"Failed to embed data from {uploaded_file.name}")
+                st.error(f"Failed to embed data from {uploaded_file.name}")"
+            """
+            return data_processor.df,success
         else:
             st.error(message)
 
@@ -98,7 +104,7 @@ def main():
                     else 0
                 ),
                 key="model_selector",
-                help="Choose between OpenAI GPT-4 (default) or Local Llama2",
+                help="Choose between OpenAI GPT-4 (default) or Local Finance Model",
             )
 
             # Update model if changed
@@ -136,9 +142,10 @@ def main():
     )
 
     if uploaded_files:
+        df = None
         for uploaded_file in uploaded_files:
             if uploaded_file.name not in st.session_state.data_processors:
-                process_uploaded_file(uploaded_file)
+                df, success = process_uploaded_file(uploaded_file)
 
         # Display currently available datasets
         st.header("Available Datasets")
@@ -169,11 +176,14 @@ def main():
                 with st.chat_message("assistant"):
                     with st.spinner("Analyzing your question..."):
                         try:
-                            response = (
-                                st.session_state.conversation_handler.process_query(
-                                    prompt
-                                )
-                            )
+                            ai_analyzer = AIAnalyzer()
+                            code_response = ai_analyzer.generate_query(prompt,'df')
+                            response = eval(code_response, {"df": df, "pd": pd})
+                            # response = (
+                            #     st.session_state.conversation_handler.process_query(
+                            #         prompt
+                            #     )
+                            # )
                             print(f"====>{response}")
                             st.markdown(response)
                             st.session_state.messages.append(

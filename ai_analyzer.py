@@ -1,11 +1,21 @@
 import openai
-from config import OPENAI_API_KEY, OPENAI_CHAT_MODEL
+from config import Config # OPENAI_API_KEY, OPENAI_CHAT_MODEL
 import calendar
 
 
 class AIAnalyzer:
     def __init__(self):
-        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        self.model_config = Config.AVAILABLE_MODELS.get('FinanceLLM',"")
+        if not self.model_config:
+            print(f"ERROR: Model configuration not found for {self.model_config}")
+            return "Error: Model configuration not found."
+        if self.model_config["type"] == "ollama":
+            self.client = openai.OpenAI(
+                    base_url="http://localhost:11434/v1",
+                    api_key="ollama",  # required, but unused
+                )
+        print(f"Model configuration: {self.model_config}")
+        # self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
         self.month_mapping = {
             month.lower(): index
             for index, month in enumerate(calendar.month_name)
@@ -35,7 +45,7 @@ class AIAnalyzer:
         try:
             processed_query = self._preprocess_query(natural_query)
             response = self.client.chat.completions.create(
-                model=OPENAI_CHAT_MODEL,
+                model = self.model_config["model"],
                 messages=[
                     {
                         "role": "system",
@@ -67,7 +77,7 @@ class AIAnalyzer:
     def format_result_as_text(self, result, query):
         try:
             response = self.client.chat.completions.create(
-                model=OPENAI_CHAT_MODEL,
+                model = self.model_config["model"],
                 messages=[
                     {
                         "role": "system",
@@ -100,7 +110,7 @@ class AIAnalyzer:
     def generate_insights(self, data_summary):
         try:
             response = self.client.chat.completions.create(
-                model=OPENAI_CHAT_MODEL,
+                model = self.model_config["model"],
                 messages=[
                     {
                         "role": "system",
