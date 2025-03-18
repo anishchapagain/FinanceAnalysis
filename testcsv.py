@@ -1,3 +1,5 @@
+import random
+from typing import Dict, List, Any
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,13 +19,17 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Store query history
+if "query_history" not in st.session_state:
+    st.session_state.query_history = []
+
 # Initialize session state variables
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = []
 if "current_conversation_id" not in st.session_state:
-    st.session_state.current_conversation_id = datetime.now().strftime("%Y%m%d_%H%M_%S")
+    st.session_state.current_conversation_id = datetime.now().strftime("%Y-%m-%d") # Overwrite
 
 # Function to save conversation history
 def save_conversation(conversation_id, messages):
@@ -67,6 +73,31 @@ def get_pandas_query(prompt, df_info):
     # Get dataframe schema
     columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
     
+    column_description = """This CSV contains banking customer data with the following columns:
+- customer_id: Unique identifier for each customer
+- customer_name: Full name of the customer
+- nationality: Country of citizenship of the customer
+- residency_status: Current residency status (e.g., NP)
+- customer_industry: Industry sector in which the customer works or operates
+- economic_sector: Broader economic classification of the customer's activities
+- bank_branch: Branch where the customer's account is primarily managed
+- account_type: Type of banking account (e.g., savings, checking, fixed deposit)
+- account_number: Unique identifier for the account
+- currency_code: Currency in which the account is denominated
+- account_category: Classification of the account (e.g., personal, business, premium)
+- account_balance: Current balance in the account in the account's currency
+- local_currency_balance: Account balance converted to local currency
+- mobile_banking: Flag indicating if the customer has enrolled in mobile banking (Yes/No)
+- internet_banking: Flag indicating if the customer has enrolled in internet banking (Yes/No)
+- account_service: Services associated with the account
+- kyc_status: Know Your Customer verification status
+- account_inactive: Flag indicating if the account is inactive (Yes/No)
+- mobile_number: Customer's mobile phone number
+- account_open_date: Date when the account was opened
+- last_debit_date: Date of the most recent debit transaction
+- last_credit_date: Date of the most recent credit transaction
+- date_of_birth: Customer's date of birth
+"""
     # Create the system prompt
     system_prompt = f"""
     You are a data analyst assistant that converts natural language queries to pandas Python code.
@@ -76,9 +107,15 @@ def get_pandas_query(prompt, df_info):
     - The dataframe is already loaded as 'df'.
     - Here are the columns and their data types:
     {json.dumps(columns_info, indent=2)}
+    - Here is a description of the dataset:
+    {column_description}
+    - Here is the sample data:
+    {df_info.head(5).to_markdown()}
+
     - Use proper pandas syntax and functions.
     - If the query asks for a chart or visualization, include code to create it using plotly.
     - If you're unsure about how to translate the query, create a simple filter that might be helpful.
+    - During query formation do assume case sensitivity.
     """
     
     # Create the request payload
@@ -121,12 +158,17 @@ def execute_pandas_query(query_code, df):
         
         # Get the result
         result = local_vars.get('result', None)
+        # print(result)
+        
+        # Check if result exists
+        if result is None:
+            return None, "No appropriate information is generated. Please assign new prompt."
         
         # If the result is a DataFrame, return it
-        if isinstance(result, pd.DataFrame):
-            return result, None
-        else:
-            return None, "The query did not return a DataFrame."
+        # Determine the type of result for appropriate display
+        result_type = "dataframe" if isinstance(result, pd.DataFrame) else "other"
+
+        return result, None, result_type
     except Exception as e:
         return None, f"Error executing query: {str(e)}"
 
@@ -172,6 +214,22 @@ def llm_connection_status():
         st.info("Start LocalLLM")
         return False
 
+def format_indian_currency(amount):
+    """Formats a float value as Indian currency (e.g., 1,65,514.68)."""
+
+    amount_str = "{:.2f}".format(amount)  # Format to 2 decimal places
+    integer_part, decimal_part = amount_str.split('.')
+
+    integer_part_reversed = integer_part[::-1]
+    formatted_integer_parts = []
+    i=0
+    for i in range(0, len(integer_part_reversed), 2 if i > 0 else 3):
+        formatted_integer_parts.append(integer_part_reversed[i:i + (2 if i > 0 else 3)])
+
+    formatted_integer = ','.join(formatted_integer_parts)[::-1]
+
+    return f"{formatted_integer}.{decimal_part}"
+
 # Main app
 def main():
     st.title("📊Chat FinanceLLM - Transactions")
@@ -190,7 +248,7 @@ def main():
     st.sidebar.title("Options")
     option = st.sidebar.radio(
         "Choose an option:",
-        ["Dashboard Overview", "Query Data", "Visualize Data"]
+        ["Dashboard Overview", "Query Data"]#, "Visualize Data"]
     )
     
     # Show data sample in sidebar
@@ -198,23 +256,23 @@ def main():
         st.dataframe(df.head(5))
     
     with st.sidebar:
-        if st.button("New Chat", use_container_width=True, help="Start a new chat session", icon=":material/chat:"):
-            st.session_state.messages = []
-            st.session_state.current_conversation_id = datetime.now().strftime("%Y%m%d_%H%M_%S")
-            st.rerun()
+        # if st.button("New Chat", use_container_width=True, help="Start a new chat session", icon=":material/chat:"):
+        #     st.session_state.messages = []
+        #     st.session_state.current_conversation_id = datetime.now().strftime("%Y-%m-%d")
+        #     st.rerun()
     
-        # Display saved conversations
-        st.subheader("Saved Conversations", divider=True)
-        if not os.path.exists("chatfinance"):
-            os.makedirs("chatfinance")
-        saved_conversations = [f.replace(".json", "") for f in os.listdir("chatfinance") if f.endswith(".json")]
+        # # Display saved conversations
+        # st.subheader("Saved Conversations", divider=True)
+        # if not os.path.exists("chatfinance"):
+        #     os.makedirs("chatfinance")
+        # saved_conversations = [f.replace(".json", "") for f in os.listdir("chatfinance") if f.endswith(".json")]
         
-        if saved_conversations:
-            selected_conversation = st.selectbox("Conversation History", saved_conversations)
-            if st.button("Load Conversation", type='secondary', use_container_width=True, help="Load a saved conversation", icon=":material/folder_open:"):
-                st.session_state.messages = load_conversation(selected_conversation)
-                st.session_state.current_conversation_id = selected_conversation
-                st.rerun()
+        # if saved_conversations:
+        #     selected_conversation = st.selectbox("Conversation History", saved_conversations)
+        #     if st.button("Load Conversation", type='secondary', use_container_width=True, help="Load a saved conversation", icon=":material/folder_open:"):
+        #         st.session_state.messages = load_conversation(selected_conversation)
+        #         st.session_state.current_conversation_id = selected_conversation
+        #         st.rerun()
     
         # Add LocalLLM connection status indicator
         st.subheader("", divider=True)
@@ -262,15 +320,19 @@ def main():
         # fig = px.bar(account_types, x='Account Type', y='Count', color='Count')
         # st.plotly_chart(fig)
         
-    elif option == "Query Data":
+    if option == "Query Data":
         st.caption("""
         ---
         ### Query the Bank Data:
         1. Enter your question in natural language, prompt.
             - Ask for code generation, chat completion or necessary details by describing what you need
             - Show top 10 customers with highest balance
-            - Show inactive accounts with a balance greater than 1000000
+            - Show inactive accounts with a balance greater than 100000
             - Show customers from branch Damauli
+            - plot active vs inactive account
+            - What is the average balance of the accounts?
+            - What is the average balance for branch Damauli? 
+            - average amount for sector 'LOCAL - PERSONS' in Head office                              
         """)
         
         # Display chat messages
@@ -279,17 +341,17 @@ def main():
                 st.markdown(message["content"])
 
         # Input for the query
-        # query = st.chat_input("Your Query", placeholder="e.g., Show inactive accounts with balance greater than 1000000")
-        if query := st.chat_input("Show inactive accounts with balance greater than 1000000"):
+        if query := st.chat_input("Show inactive accounts with balance greater than 100000"):
+            
             # Add user message to chat history
             st.session_state.messages.append({"role": "user", "content": query})  #Prompt is the user input
-    
+            
             # Display user message
             with st.chat_message("user"):
                 st.markdown(query)
 
             with st.chat_message("assistant"):
-                with st.spinner("Processing your query with FinanceLLM..."):
+                with st.spinner("Processing..FinanceLLM..."):
                     # Get the pandas query from FinanceLLM
                     pandas_query = get_pandas_query(query, df)
                     
@@ -298,95 +360,39 @@ def main():
                         st.code(pandas_query, language="python")
                     
                     # Execute the query
-                    result, error = execute_pandas_query(pandas_query, df)
+                    result, error, result_type = execute_pandas_query(pandas_query, df)
                     
                     if error:
                         st.error(error)
-                    elif result is not None and not result.empty:
-                        st.success(f"Found {len(result)} matching records")
-                        st.dataframe(result, use_container_width=True)
-                        
-                        # # Highlight key columns
-                        # if 'account_balance' in result.columns:
-                        #     st.subheader("Account Balance Distribution")
-                        #     fig = px.histogram(result, x='account_balance', nbins=20)
-                        #     st.plotly_chart(fig)
-                        
-                        # Download option
-                        csv = result.to_csv(index=False)
-                        st.download_button(
-                            label="Download results as CSV",
-                            data=csv,
-                            file_name="query_results.csv",
-                            mime="text/csv"
-                        )
-                    elif result is not None:
-                        st.info("No matching records found for your query.")
-                        st.warning("FinanceLLM couldn't understand that query. Here are some examples you can try:\n" +
-                    "- Show inactive accounts\n" +
-                    "- Show customers with mobile banking\n" +
-                    "- Show accounts with balance greater than 100000\n" +
-                    "- Show top 10 customers with highest balance\n" +
-                    "- Show customers from Damauli\n" +
-                    "- Show staff accounts")
-                    
-                    save_conversation(st.session_state.current_conversation_id, st.session_state.messages)
-
-    elif option == "Visualize Data":
-        st.header("Visualize Bank Data")
-        st.write("Enter what you want to visualize and FinanceLLM will generate a plot.")
-        
-        viz_query = st.text_input("Visualization Request", placeholder="e.g., Create a bar chart of account types by branch")
-        
-        if viz_query:
-            with st.spinner("Creating visualization with FinanceLLM..."):
-                # Get the pandas query from FinanceLLM
-                viz_code = get_pandas_query(f"Create a visualization that {viz_query}", df)
-                
-                # Display the generated code
-                with st.expander("View Generated Visualization Code"):
-                    st.code(viz_code, language="python")
-                
-                # Execute the visualization code
-                try:
-                    # Create a local scope with the dataframe and plotly
-                    local_vars = {'df': df, 'px': px}
-                    
-                    # Execute the code in the local scope
-                    exec(viz_code, {}, local_vars)
-                    
-                    # Get the result
-                    result = local_vars.get('result', None)
-                    
-                    if 'fig' in local_vars:
-                        st.plotly_chart(local_vars['fig'])
-                    elif result is not None:
-                        st.dataframe(result)
                     else:
-                        st.warning("No visualization was generated.")
-                except Exception as e:
-                    st.error(f"Error executing visualization code: {str(e)}")
-        
-        # Always show some default visualizations
-        st.subheader("Account Activity")
-        active_vs_inactive = df['account_inactive'].value_counts().reset_index()
-        active_vs_inactive.columns = ['Status', 'Count']
-        active_vs_inactive['Status'] = active_vs_inactive['Status'].map({True: 'Inactive', False: 'Active'})
-        fig = px.pie(active_vs_inactive, values='Count', names='Status', title='Active vs Inactive Accounts')
-        st.plotly_chart(fig)
-        
-        # Banking services adoption
-        st.subheader("Banking Services Adoption")
-        services = pd.DataFrame({
-            'Service': ['Mobile Banking', 'Internet Banking', 'Account Service'],
-            'Users': [
-                df['mobile_banking'].sum(),
-                df['internet_banking'].sum(),
-                df['account_service'].sum()
-            ]
-        })
-        fig = px.bar(services, x='Service', y='Users', color='Service')
-        st.plotly_chart(fig)
+                        if result is None:
+                            st.info("No matching records found for your query.")
+                            st.warning("FinanceLLM couldn't understand that query. Here are some examples you can try:\n" +
+                            "- Show inactive accounts\n" +
+                            "- Show customers with mobile banking\n" +
+                            "- Show accounts with balance greater than 100000\n" +
+                            "- Show top 10 customers with highest balance\n" +
+                            "- Show customers from Damauli\n" +
+                            "- Show staff accounts")
+
+                        if result_type == "dataframe" and result is not None:
+                            st.success(f"Found {len(result)} matching records")
+                            st.dataframe(result, use_container_width=True)
+                            csv = result.to_csv(index=False)
+                            st.download_button(
+                                label="Download results as CSV",
+                                data=csv,
+                                file_name="query_results.csv",
+                                mime="text/csv"
+                            )
+                            st.session_state.messages.append({"role": "assistant", "type": "dataframe", "content": f"Found {len(result)} matching records"})
+                        else:
+                            if isinstance(result, float):
+                                result = format_indian_currency(result)
+                                result = f"{result:.2f}" if isinstance(result, float) else result
+
+                            st.write(result)
+                            st.session_state.messages.append({"role": "assistant", "type": "text", "content": str(result)})
 
 if __name__ == "__main__":
     main()
