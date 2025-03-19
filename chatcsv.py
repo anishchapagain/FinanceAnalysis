@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import json
 import re
@@ -18,6 +20,8 @@ st.set_page_config(
 # Initialize session state variables for current query
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "column_descriptions" not in st.session_state:
+    st.session_state.column_descriptions = ""
 
 # Function to load data
 @st.cache_data
@@ -299,15 +303,114 @@ def format_indian_currency(amount):
     except:
         return str(amount)  # Return original amount if formatting fails
 
+def generate_summary_statistics(df: pd.DataFrame):
+        """
+        Generate summary statistics for the DataFrame.
         
+        Args:
+            df: DataFrame to analyze
+            
+        Returns:
+            Dictionary of summary statistics
+        """
+        try:
+            # Basic DataFrame information
+            summary = {
+                "row_count": len(df),
+                "column_count": len(df.columns),
+                "memory_usage": df.memory_usage(deep=True).sum() / 1024**2,  # in MB
+            }
+            
+            # Numerical column statistics
+            numerical_columns = df.select_dtypes(include=["int64", "float64"]).columns
+            if not numerical_columns.empty:
+                num_stats = df[numerical_columns].describe().to_dict()
+                summary["numerical_stats"] = num_stats
+            
+            # Categorical column statistics
+            categorical_columns = df.select_dtypes(include=["object", "category"]).columns
+            cat_stats = {}
+            for col in categorical_columns:
+                try:
+                    value_counts = df[col].value_counts().to_dict()
+                    unique_count = len(value_counts)
+                    top_categories = {k: v for i, (k, v) in enumerate(value_counts.items()) if i < 5}
+                    
+                    cat_stats[col] = {
+                        "unique_count": unique_count,
+                        "top_categories": top_categories,
+                        "null_count": df[col].isna().sum()
+                    }
+                except Exception as e:
+                    self.error_handler.handle_error(e, f"Error analyzing column {col}")
+            
+            summary["categorical_stats"] = cat_stats
+            
+            # Missing value analysis
+            missing_values = df.isna().sum().to_dict()
+            summary["missing_values"] = {k: v for k, v in missing_values.items() if v > 0}
+            
+            return summary
+        
+        except Exception as e:
+            self.error_handler.handle_error(e, "Error generating summary statistics")
+            return {"error": str(e)}
+
+def create_distribution_plots(df: pd.DataFrame, max_columns: int = 6):
+        """
+        Create distribution plots for numerical columns.
+        
+        Args:
+            df: DataFrame to analyze
+            max_columns: Maximum number of columns to create plots for
+            
+        Returns:
+            List of dictionaries with plot data
+        """
+        try:
+            # Get numerical columns
+            numerical_columns = df.select_dtypes(include=["int64", "float64"]).columns
+            
+            # Limit to max_columns
+            if len(numerical_columns) > max_columns:
+                numerical_columns = numerical_columns[:max_columns]
+            
+            plot_data = []
+            for col in numerical_columns:
+                try:
+                    # Basic statistics
+                    mean_val = df[col].mean()
+                    median_val = df[col].median()
+                    
+                    # Create histogram data
+                    counts, bins = np.histogram(df[col].dropna(), bins=20)
+                    bins_center = (bins[:-1] + bins[1:]) / 2
+                    
+                    plot_data.append({
+                        "column": col,
+                        "type": "histogram",
+                        "x": bins_center.tolist(),
+                        "y": counts.tolist(),
+                        "mean": mean_val,
+                        "median": median_val
+                    })
+                except Exception as e:
+                    raise f"Error creating distribution plot for {col}: {e}"
+            
+            return plot_data
+        
+        except Exception as e:
+            raise RuntimeError(f"Error creating distribution plot for {col}")
+            return []
+                   
 # Main app
 def main():
     st.title("📊Chat FinanceLLM - Transactions")
     
-    # Sidebar for options
-    st.sidebar.title("Chat Options")
+    # Upload file
     uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type="csv")
-    # In production, you would replace this with your actual file path
+    df = pd.DataFrame()
+
     if uploaded_file:
         # Check file extension
         file_extension = uploaded_file.name.split('.')[-1].lower()
@@ -321,10 +424,24 @@ def main():
             # Get column descriptions
             if "column_descriptions" not in st.session_state:
                 st.session_state.column_descriptions = get_column_descriptions(df)
-            
+    
+    # Initialize session state for selection
+    if "selected_option" not in st.session_state:
+        st.session_state.selected_option = "Query"
+    
+    # Sidebar navigation buttons
+    if st.sidebar.button("Dashboard Overview", use_container_width=True, help="View the dashboard overview", key="dashboard"):
+        st.session_state.selected_option = "Dashboard"
+
+    if st.sidebar.button("Query Data", use_container_width=True, help="Query the bank data", key="query"):
+        st.session_state.selected_option = "Query"
+
     # Dashboard and Query buttons
-    option_dashboard = st.sidebar.button("Dashboard Overview", use_container_width=True, help="View the dashboard overview")
-    option_query = st.sidebar.button("Query Data", use_container_width=True,help="Query the bank data")
+    # option_dashboard = st.sidebar.button("Dashboard Overview", use_container_width=True, help="View the dashboard overview")
+    # option_query = st.sidebar.button("Query Data", use_container_width=True,help="Query the bank data")
+
+    # Sidebar for options
+    st.sidebar.title("Chat Options")
     
     # Add LLM connection status indicator
     with st.sidebar:
@@ -335,8 +452,9 @@ def main():
         with st.expander("Column Descriptions"):
             st.markdown(st.session_state.column_descriptions)
 
-    # Main content based on selected option
-    if option_dashboard:
+    # Main content based on selected option DASHBOARD
+    #if option_dashboard:
+    if st.session_state.selected_option == "Dashboard":
         st.header("Bank Data Dashboard")
         st.caption("Overview of the bank data for customer transactions")
         show_basic_info(df)
@@ -373,8 +491,14 @@ def main():
             fig = px.bar(category_amount, x='Category', y='Total Balance', color='Category', orientation='v')
             st.plotly_chart(fig)
         
+        # generate_summary_statistics(df)
+        # Create distribution plots
+        # plot_data = create_distribution_plots(df)
+        
+        
     # Query mode is the default view
-    if option_query or not option_dashboard:
+    #if option_query or not option_dashboard:
+    if st.session_state.selected_option == "Query":
         st.header("Query Your Banking Data")
         
         # Show data sample in sidebar
