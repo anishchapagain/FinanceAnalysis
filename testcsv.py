@@ -246,11 +246,13 @@ def main():
     
     # Sidebar for options
     st.sidebar.title("Options")
-    option = st.sidebar.radio(
-        "Choose an option:",
-        ["Dashboard Overview", "Query Data"]#, "Visualize Data"]
-    )
+    # option = st.sidebar.radio(
+    #     "Choose an option:",
+    #     ["Dashboard Overview", "Query Data"]#, "Visualize Data"]
+    # )
     
+    option_dashboard = st.sidebar.button("Dashboard Overview", use_container_width=True, help="View the dashboard overview", icon=":material/dashboard:")
+    option_query = st.sidebar.button("Query Data", help="Query the bank data", use_container_width=True, icon=":material/query_builder:")
     # Show data sample in sidebar
     with st.sidebar.expander("View Sample Data"):
         st.dataframe(df.head(5))
@@ -279,7 +281,8 @@ def main():
         llm_connection_status()
 
     # Main content based on selected option
-    if option == "Dashboard Overview":
+    if st.button("Dashboard Overview"):
+    # if option_dashboard == "Dashboard Overview":
         st.header("Bank Data Dashboard")
         st.caption("Overview of the bank data for some transactions. To be adjusted.")
         show_basic_info(df)
@@ -320,7 +323,8 @@ def main():
         # fig = px.bar(account_types, x='Account Type', y='Count', color='Count')
         # st.plotly_chart(fig)
         
-    if option == "Query Data":
+    if option_dashboard == "Query Data":
+    # if option == "Query Data":
         st.caption("""
         ---
         ### Query the Bank Data:
