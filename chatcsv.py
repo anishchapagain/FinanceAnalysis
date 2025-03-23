@@ -15,7 +15,7 @@ import os
 import visualize.visualizer_eda as visual
 
 NO_DATA_MESSAGE = "Sorry, but no matching records found. Please try a new prompt: if it's related to some specific value mention using Quotes."
-ERROR_MESSAGE = "Some issue has occurred, please rewrite your prompt."
+ERROR_MESSAGE = "Some issue has occurred, please try using new prompt."
 NO_MATCHING_RECORDS = "No matching records found for your query."
 
 MATERIAL_ARROW_DOWN = ":material/arrow_drop_down:"
@@ -260,7 +260,7 @@ def visualize_numeric_columns(df):
     
     # Let user select a numeric column to visualize
     selected_column = st.selectbox(
-        "Select a numeric column to visualize:",
+        "**Select a numeric column to visualize:**",
         options=numeric_columns
     )
     
@@ -279,7 +279,7 @@ def visualize_numeric_columns(df):
         
         # Filter out NaN values
         valid_data = df[~df[selected_column].isna()]
-        bin_count = st.slider("Number of bins:", min_value=5, max_value=50, value=20)
+        bin_count = st.slider("Number of bins (interval of grouped data):", min_value=0, max_value=20, value=5)
         value_counts = valid_data[selected_column].value_counts().nlargest(bin_count)
 
         if viz_type == "Histogram":
@@ -295,7 +295,7 @@ def visualize_numeric_columns(df):
             st.plotly_chart(fig)
             
             # Add basic statistics
-            st.write("Basic Statistics:")
+            st.write(f"**Basic Statistics:** {selected_column}")
             stats = df[selected_column].describe()
             st.write(stats)
         
@@ -313,7 +313,7 @@ def visualize_numeric_columns(df):
             st.plotly_chart(fig)
             
             # Add basic statistics
-            st.write("General Statistics:")
+            st.write(f"**General Statistics:** {selected_column}")
             stats = df[selected_column].describe()
             st.write(stats)
 
@@ -331,7 +331,7 @@ def visualize_numeric_columns(df):
             st.plotly_chart(fig)
             
             # Add basic statistics
-            st.write("Basic Statistics:")
+            st.write(f"**Basic Statistics:** {selected_column}")
             stats = df[selected_column].describe()
             st.write(stats)
 
@@ -360,7 +360,7 @@ def visualize_numeric_columns(df):
             
         elif viz_type == "Bar Chart (Top Values)":
             # For bar charts, limit to top N values
-            top_n = st.slider("Show top N values:", min_value=5, max_value=50, value=10)
+            top_n = st.slider("Show top N values:", min_value=5, max_value=20, value=5)
             
             # Check if we need to group values
             if len(valid_data[selected_column].unique()) > 100:
@@ -378,7 +378,7 @@ def visualize_numeric_columns(df):
                     binned_data,
                     x='bin',
                     y='count',
-                    title=f"Distribution of {selected_column} (Binned)",
+                    title=f"**Distribution of** {selected_column} (Binned)",
                     color=binned_data.values,
                     color_continuous_scale='Blues'
                 )
@@ -400,6 +400,7 @@ def visualize_numeric_columns(df):
     
     # Option to explore correlations if multiple numeric columns exist
     if len(numeric_columns) > 1 and st.checkbox("*Explore correlations between numeric columns*"):
+        st.divider()
         st.subheader("Correlation Analysis")
         
         col1, col2 = st.columns(2)
@@ -622,6 +623,8 @@ def main():
         
         Example queries:
         - Show top 10 customers with highest balance
+        - Describe data or give some information about data
+        - Data Sample
         - Show inactive accounts with a balance greater than 100000
         - Show customers from branch Damauli
         - Plot active vs inactive accounts
