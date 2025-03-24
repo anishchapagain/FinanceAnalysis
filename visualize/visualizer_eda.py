@@ -31,12 +31,7 @@ def analyze_dataframe(df):
     # Remove identified datetime columns from categorical list
     categorical_columns = [col for col in categorical_columns if col not in datetime_columns]
     
-    # Select analysis type
-    # analysis_type = st.radio(
-    #     "Select Analysis Type:",
-    #     options=["Exploratory Data Analysis", "Univariate Analysis", "Bivariate Analysis", 
-    #             "Correlation Analysis", "Time Series Analysis"]
-    # )
+
     analysis_type = st.selectbox(
         "**Select Analysis Method**",
         ("Exploratory Data Analysis", "Univariate Analysis", "Bivariate Analysis", 
@@ -224,7 +219,7 @@ def perform_eda(df, numeric_columns, categorical_columns, datetime_columns):
         st.divider()
         st.markdown("#### Select Categorical columns to visualize")
         selected_categorical = st.multiselect(
-            "Select categorical columns to visualize",
+            "Visualize categorical columns",
             label_visibility="hidden",
             options=categorical_columns,
             default=categorical_columns[:min(3, len(categorical_columns))]
@@ -418,7 +413,7 @@ def analyze_numeric_column(df, numeric_columns):
             outliers = valid_data[(valid_data[selected_column] < outlier_low) | 
                                  (valid_data[selected_column] > outlier_high)]
             
-            st.write(f"Outliers: {len(outliers)} ({len(outliers)/len(valid_data)*100:.2f}%)")
+            st.write(f"**Outliers:** {len(outliers)} ({len(outliers)/len(valid_data)*100:.2f}%)")
             
             # Show histogram of z-scores to check normality
             z_scores = (valid_data[selected_column] - valid_data[selected_column].mean()) / valid_data[selected_column].std()
@@ -1203,11 +1198,11 @@ def perform_time_series_analysis(df, datetime_columns, numeric_columns):
     st.subheader("Time Series Analysis")
     
     if not datetime_columns:
-        st.warning("No datetime columns detected in the dataframe.")
+        st.warning("Sorry, but data doesnot contain Date and Time related columns for futher Analysis.")
         return
     
     if not numeric_columns:
-        st.warning("No numeric columns detected in the dataframe.")
+        st.warning("Sorry, but data doesnot contain any Numeric valued columns for futher Analysis.")
         return
     
     # Select datetime column
@@ -1282,9 +1277,9 @@ def perform_time_series_analysis(df, datetime_columns, numeric_columns):
     st.plotly_chart(fig)
     
     # Analysis type selection
-    analysis_type = st.radio(
+    analysis_type = st.selectbox(
         "Select analysis type:",
-        options=["Decomposition", "Autocorrelation", "Rolling Statistics", "Forecasting"]
+        ("Decomposition", "Autocorrelation", "Rolling Statistics", "Forecasting"),
     )
     
     time.sleep(0.1)  # Small delay for UI responsiveness
@@ -1292,7 +1287,7 @@ def perform_time_series_analysis(df, datetime_columns, numeric_columns):
     if analysis_type == "Decomposition":
         # Check if we have enough data points
         if len(resampled) < 2 * max(7, 12, 4):  # Minimum 2 periods
-            st.warning("Not enough data points for decomposition.")
+            st.warning("Not enough data points for decomposition. For typical time series decomposition it needs at least 2 observations for each period for it to be able to extract a trend")
             return
         
         try:
@@ -1667,17 +1662,17 @@ def perform_correlation_analysis(df, numeric_columns):
     st.subheader("Correlation Analysis")
     
     if len(numeric_columns) < 2:
-        st.warning("Need at least two numeric columns for correlation analysis.")
+        st.warning("For correlation analysis at least two numeric columns is required.")
         return
     
     # Add a small sleep time for UI responsiveness
     import time
-    time.sleep(0.1)
+    time.sleep(0.2)
     
     # Select correlation method
-    corr_method = st.radio(
-        "Correlation method:",
-        options=["Pearson", "Spearman", "Kendall"]
+    corr_method = st.selectbox(
+        "**Correlation method:**",
+        ("Pearson", "Spearman", "Kendall"),
     )
     
     # Calculate correlation matrix
@@ -1792,7 +1787,7 @@ def perform_correlation_analysis(df, numeric_columns):
             
             if high_corr_pairs:
                 high_corr_df = pd.DataFrame(high_corr_pairs).sort_values("Correlation", ascending=False)
-                st.dataframe(high_corr_df)
+                st.dataframe(high_corr_df, use_container_width=True)
                 
                 # Visualize top correlated pairs
                 st.write("### Top Correlated Feature Pairs")
@@ -1844,14 +1839,18 @@ def perform_correlation_analysis(df, numeric_columns):
                         valid_data[feature], valid_data[target]
                     )
                     
-                    st.write(f"Regression equation: {target} = {slope:.4f} * {feature} + {intercept:.4f}")
-                    st.write(f"R-squared: {r_value**2:.4f}")
-                    st.write(f"P-value: {p_value:.4f}")
+                    st.info(f"""
+                    Regression equation: {target} = {slope:.4f} * {feature} + {intercept:.4f}
+
+                    R-squared: {r_value**2:.4f}
+
+                    P-value: {p_value:.4f}
+                    """)
                     
                     if p_value < 0.05:
-                        st.write("This relationship is statistically significant (p < 0.05)")
+                        st.info("This relationship is statistically significant (p < 0.05)")
                     else:
-                        st.write("This relationship is not statistically significant (p >= 0.05)")
+                        st.warning("This relationship is not statistically significant (p >= 0.05)")
                         
                 except Exception as e:
                     st.error(f"Could not calculate regression statistics: {str(e)}")
@@ -1929,7 +1928,7 @@ def perform_bivariate_analysis(df, numeric_columns, categorical_columns, datetim
     # Check if we can process based on selected column types
     if x_column and y_column:
         # Add small delay for UI responsiveness
-        time.sleep(0.1)
+        time.sleep(0.2)
         
         # Handle datetime conversions if needed
         if x_type == "Datetime" and df[x_column].dtype != 'datetime64[ns]':
@@ -2168,213 +2167,215 @@ def perform_bivariate_analysis(df, numeric_columns, categorical_columns, datetim
 
 def analyze_numeric_vs_numeric(df, x_column, y_column):
     """Analyze relationship between two numeric columns"""
-    st.write(f"### {y_column} vs {x_column} Analysis")
+    st.write(f"### Numeric Column Analysis: {y_column} vs {x_column}")
     
     # Add a small sleep time for UI responsiveness
     import time
-    time.sleep(0.1)
-    
-    # Visualization type selection
-    viz_type = st.radio(
-        "Visualization type:",
-        options=["Scatter Plot", "Hexbin Plot", "Bubble Chart", "Contour Plot", "3D Plot"]
-    )
-    
-    # Filter out NaN values
-    valid_data = df[[x_column, y_column]].dropna()
-    
-    if viz_type == "Scatter Plot":
-        # Add option for trend line
-        add_trendline = st.checkbox("Add trend line")
-        
-        # Create scatter plot
-        fig = px.scatter(
-            valid_data,
-            x=x_column,
-            y=y_column,
-            opacity=0.6,
-            title=f"{y_column} vs {x_column}",
-            trendline="ols" if add_trendline else None
+    time.sleep(0.2)
+    if y_column == x_column:
+        st.warning("Please select valid columns for proper analysis.")
+    else:
+        # Visualization type selection
+        viz_type = st.radio(
+            "Visualization type:",
+            options=["Scatter Plot", "Hexbin Plot", "Bubble Chart", "Contour Plot", "3D Plot"]
         )
-        st.plotly_chart(fig)
         
-        # Show regression statistics if trendline is added
-        if add_trendline:
+        # Filter out NaN values
+        valid_data = df[[x_column, y_column]].dropna()
+        
+        if viz_type == "Scatter Plot":
+            # Add option for trend line
+            add_trendline = st.checkbox("Add trend line")
+            
+            # Create scatter plot
+            fig = px.scatter(
+                valid_data,
+                x=x_column,
+                y=y_column,
+                opacity=0.6,
+                title=f"{y_column} vs {x_column}",
+                trendline="ols" if add_trendline else None
+            )
+            st.plotly_chart(fig)
+            
+            # Show regression statistics if trendline is added
+            if add_trendline:
+                try:
+                    import statsmodels.api as sm
+                    
+                    # Fit linear regression model
+                    X = sm.add_constant(valid_data[x_column])
+                    model = sm.OLS(valid_data[y_column], X).fit()
+                    
+                    # Display regression statistics
+                    st.write("### Regression Statistics")
+                    st.write(f"Equation: {y_column} = {model.params[1]:.4f} * {x_column} + {model.params[0]:.4f}")
+                    st.write(f"R-squared: {model.rsquared:.4f}")
+                    st.write(f"Adjusted R-squared: {model.rsquared_adj:.4f}")
+                    st.write(f"F-statistic: {model.fvalue:.4f}")
+                    st.write(f"p-value: {model.f_pvalue:.4f}")
+                    
+                    if model.f_pvalue < 0.05:
+                        st.write("The relationship is statistically significant (p < 0.05).")
+                    else:
+                        st.write("The relationship is not statistically significant (p >= 0.05).")
+                except Exception as e:
+                    st.error(f"Could not calculate regression statistics: {str(e)}")
+        
+        elif viz_type == "Hexbin Plot":
+            # More suitable for large datasets
+            nbins = st.slider("Number of hexagons (approx.):", 10, 100, 30)
+            
+            fig = px.density_heatmap(
+                valid_data,
+                x=x_column,
+                y=y_column,
+                nbinsx=nbins,
+                nbinsy=nbins,
+                marginal_x="histogram",
+                marginal_y="histogram",
+                title=f"Hexbin Plot of {y_column} vs {x_column}"
+            )
+            st.plotly_chart(fig)
+        
+        elif viz_type == "Bubble Chart":
+            # Select a third variable for bubble size
+            size_options = ["Count"] + [col for col in numeric_columns if col != x_column and col != y_column]
+            size_col = st.selectbox("Select variable for bubble size:", size_options)
+            
+            # Create binned data for bubble chart
+            if size_col == "Count":
+                # Create bins for x and y values
+                bin_count = st.slider("Number of bins per axis:", 5, 30, 10)
+                x_bins = pd.cut(valid_data[x_column], bin_count)
+                y_bins = pd.cut(valid_data[y_column], bin_count)
+                
+                # Group by bins and count
+                grouped = valid_data.groupby([x_bins, y_bins]).size().reset_index()
+                grouped.columns = ['x_bin', 'y_bin', 'count']
+                
+                # Use midpoints of bins for scatter plot
+                grouped['x'] = grouped['x_bin'].apply(lambda x: (x.left + x.right) / 2)
+                grouped['y'] = grouped['y_bin'].apply(lambda y: (y.left + y.right) / 2)
+                
+                # Create bubble chart
+                fig = px.scatter(
+                    grouped,
+                    x='x',
+                    y='y',
+                    size='count',
+                    color='count',
+                    labels={
+                        'x': x_column,
+                        'y': y_column,
+                        'count': 'Count',
+                        'color': 'Count'
+                    },
+                    title=f"Bubble Chart of {y_column} vs {x_column} (size = count)"
+                )
+            else:
+                # Use third variable for bubble size
+                fig = px.scatter(
+                    df,
+                    x=x_column,
+                    y=y_column,
+                    size=size_col,
+                    color=size_col,
+                    title=f"Bubble Chart of {y_column} vs {x_column} (size = {size_col})"
+                )
+            
+            st.plotly_chart(fig)
+        
+        elif viz_type == "Contour Plot":
+            # Create contour plot
+            fig = px.density_contour(
+                valid_data,
+                x=x_column,
+                y=y_column,
+                title=f"Contour Plot of {y_column} vs {x_column}"
+            )
+            fig.update_traces(contours_coloring="fill", contours_showlabels=True)
+            st.plotly_chart(fig)
+        
+        elif viz_type == "3D Plot":
+            # Select a third variable for z-axis
+            z_options = [col for col in numeric_columns if col != x_column and col != y_column]
+            
+            if z_options:
+                z_column = st.selectbox("Select Z-axis column:", z_options)
+                
+                # Filter data for 3D plot
+                valid_data_3d = df[[x_column, y_column, z_column]].dropna()
+                
+                # Create 3D scatter plot
+                fig = px.scatter_3d(
+                    valid_data_3d,
+                    x=x_column,
+                    y=y_column,
+                    z=z_column,
+                    color=z_column,
+                    title=f"3D Plot of {x_column} vs {y_column} vs {z_column}"
+                )
+                st.plotly_chart(fig)
+            else:
+                st.warning("Need at least one more numeric column for 3D plot.")
+        
+        # Show correlation statistics
+        with st.expander("Correlation Statistics"):
             try:
-                import statsmodels.api as sm
+                # Pearson correlation
+                pearson_corr = valid_data[x_column].corr(valid_data[y_column], method='pearson')
+                st.write(f"### Pearson correlation coefficient: {pearson_corr:.4f}")
                 
-                # Fit linear regression model
-                X = sm.add_constant(valid_data[x_column])
-                model = sm.OLS(valid_data[y_column], X).fit()
+                # Spearman rank correlation
+                spearman_corr = valid_data[x_column].corr(valid_data[y_column], method='spearman')
+                st.write(f"### Spearman rank correlation coefficient: {spearman_corr:.4f}")
                 
-                # Display regression statistics
-                st.write("### Regression Statistics")
-                st.write(f"Equation: {y_column} = {model.params[1]:.4f} * {x_column} + {model.params[0]:.4f}")
-                st.write(f"R-squared: {model.rsquared:.4f}")
-                st.write(f"Adjusted R-squared: {model.rsquared_adj:.4f}")
-                st.write(f"F-statistic: {model.fvalue:.4f}")
-                st.write(f"p-value: {model.f_pvalue:.4f}")
+                # Correlation test
+                from scipy import stats
+                pearson_r, p_value = stats.pearsonr(valid_data[x_column], valid_data[y_column])
+                st.write(f"### Correlation test p-value: {p_value:.4f}")
                 
-                if model.f_pvalue < 0.05:
-                    st.write("The relationship is statistically significant (p < 0.05).")
+                if p_value < 0.05:
+                    st.write("### The correlation is statistically significant (p < 0.05).")
                 else:
-                    st.write("The relationship is not statistically significant (p >= 0.05).")
+                    st.write("### The correlation is not statistically significant (p >= 0.05).")
+                    
+                # R-squared
+                st.write(f"### R-squared (coefficient of determination): {pearson_r**2:.4f}")
+                
+                # Interpretation
+                st.write("### Correlation Interpretation")
+                if abs(pearson_corr) < 0.3:
+                    strength = "weak"
+                elif abs(pearson_corr) < 0.7:
+                    strength = "moderate"
+                else:
+                    strength = "strong"
+                    
+                direction = "positive" if pearson_corr > 0 else "negative"
+                
+                st.write(f"### This is a {strength} {direction} correlation.")
+                
+                # Pie chart of explained vs unexplained variance
+                explained = pearson_r**2 * 100
+                unexplained = 100 - explained
+                
+                fig = px.pie(
+                    names=['Explained Variance', 'Unexplained Variance'],
+                    values=[explained, unexplained],
+                    title="Variance Explanation"
+                )
+                st.plotly_chart(fig)
+                
             except Exception as e:
-                st.error(f"Could not calculate regression statistics: {str(e)}")
-    
-    elif viz_type == "Hexbin Plot":
-        # More suitable for large datasets
-        nbins = st.slider("Number of hexagons (approx.):", 10, 100, 30)
-        
-        fig = px.density_heatmap(
-            valid_data,
-            x=x_column,
-            y=y_column,
-            nbinsx=nbins,
-            nbinsy=nbins,
-            marginal_x="histogram",
-            marginal_y="histogram",
-            title=f"Hexbin Plot of {y_column} vs {x_column}"
-        )
-        st.plotly_chart(fig)
-    
-    elif viz_type == "Bubble Chart":
-        # Select a third variable for bubble size
-        size_options = ["Count"] + [col for col in numeric_columns if col != x_column and col != y_column]
-        size_col = st.selectbox("Select variable for bubble size:", size_options)
-        
-        # Create binned data for bubble chart
-        if size_col == "Count":
-            # Create bins for x and y values
-            bin_count = st.slider("Number of bins per axis:", 5, 30, 10)
-            x_bins = pd.cut(valid_data[x_column], bin_count)
-            y_bins = pd.cut(valid_data[y_column], bin_count)
-            
-            # Group by bins and count
-            grouped = valid_data.groupby([x_bins, y_bins]).size().reset_index()
-            grouped.columns = ['x_bin', 'y_bin', 'count']
-            
-            # Use midpoints of bins for scatter plot
-            grouped['x'] = grouped['x_bin'].apply(lambda x: (x.left + x.right) / 2)
-            grouped['y'] = grouped['y_bin'].apply(lambda y: (y.left + y.right) / 2)
-            
-            # Create bubble chart
-            fig = px.scatter(
-                grouped,
-                x='x',
-                y='y',
-                size='count',
-                color='count',
-                labels={
-                    'x': x_column,
-                    'y': y_column,
-                    'count': 'Count',
-                    'color': 'Count'
-                },
-                title=f"Bubble Chart of {y_column} vs {x_column} (size = count)"
-            )
-        else:
-            # Use third variable for bubble size
-            fig = px.scatter(
-                df,
-                x=x_column,
-                y=y_column,
-                size=size_col,
-                color=size_col,
-                title=f"Bubble Chart of {y_column} vs {x_column} (size = {size_col})"
-            )
-        
-        st.plotly_chart(fig)
-    
-    elif viz_type == "Contour Plot":
-        # Create contour plot
-        fig = px.density_contour(
-            valid_data,
-            x=x_column,
-            y=y_column,
-            title=f"Contour Plot of {y_column} vs {x_column}"
-        )
-        fig.update_traces(contours_coloring="fill", contours_showlabels=True)
-        st.plotly_chart(fig)
-    
-    elif viz_type == "3D Plot":
-        # Select a third variable for z-axis
-        z_options = [col for col in numeric_columns if col != x_column and col != y_column]
-        
-        if z_options:
-            z_column = st.selectbox("Select Z-axis column:", z_options)
-            
-            # Filter data for 3D plot
-            valid_data_3d = df[[x_column, y_column, z_column]].dropna()
-            
-            # Create 3D scatter plot
-            fig = px.scatter_3d(
-                valid_data_3d,
-                x=x_column,
-                y=y_column,
-                z=z_column,
-                color=z_column,
-                title=f"3D Plot of {x_column} vs {y_column} vs {z_column}"
-            )
-            st.plotly_chart(fig)
-        else:
-            st.warning("Need at least one more numeric column for 3D plot.")
-    
-    # Show correlation statistics
-    with st.expander("Correlation Statistics"):
-        try:
-            # Pearson correlation
-            pearson_corr = valid_data[x_column].corr(valid_data[y_column], method='pearson')
-            st.write(f"Pearson correlation coefficient: {pearson_corr:.4f}")
-            
-            # Spearman rank correlation
-            spearman_corr = valid_data[x_column].corr(valid_data[y_column], method='spearman')
-            st.write(f"Spearman rank correlation coefficient: {spearman_corr:.4f}")
-            
-            # Correlation test
-            from scipy import stats
-            pearson_r, p_value = stats.pearsonr(valid_data[x_column], valid_data[y_column])
-            st.write(f"Correlation test p-value: {p_value:.4f}")
-            
-            if p_value < 0.05:
-                st.write("The correlation is statistically significant (p < 0.05).")
-            else:
-                st.write("The correlation is not statistically significant (p >= 0.05).")
-                
-            # R-squared
-            st.write(f"R-squared (coefficient of determination): {pearson_r**2:.4f}")
-            
-            # Interpretation
-            st.write("### Correlation Interpretation")
-            if abs(pearson_corr) < 0.3:
-                strength = "weak"
-            elif abs(pearson_corr) < 0.7:
-                strength = "moderate"
-            else:
-                strength = "strong"
-                
-            direction = "positive" if pearson_corr > 0 else "negative"
-            
-            st.write(f"This is a {strength} {direction} correlation.")
-            
-            # Pie chart of explained vs unexplained variance
-            explained = pearson_r**2 * 100
-            unexplained = 100 - explained
-            
-            fig = px.pie(
-                names=['Explained Variance', 'Unexplained Variance'],
-                values=[explained, unexplained],
-                title="Variance Explanation"
-            )
-            st.plotly_chart(fig)
-            
-        except Exception as e:
-            st.error(f"Error calculating correlation statistics: {str(e)}")
+                st.error(f"Error calculating correlation statistics: {str(e)}")
 
 
 def analyze_categorical_vs_numeric(df, x_column, y_column):
     """Analyze relationship between a categorical and a numeric column"""
-    st.write(f"### {y_column} by {x_column} Analysis")
+    st.write(f"### Categorical vs Numeric Analysis: {y_column} by {x_column}")
     
     # Add a small sleep time for UI responsiveness
     import time
@@ -2584,7 +2585,7 @@ def analyze_categorical_vs_numeric(df, x_column, y_column):
 
 def analyze_categorical_vs_categorical(df, x_column, y_column):
     """Analyze relationship between two categorical columns"""
-    st.write(f"### {y_column} vs {x_column} Analysis")
+    st.write(f"### Categorical Analysis: {y_column} vs {x_column}")
     
     # Add a small sleep time for UI responsiveness
     import time
@@ -2892,7 +2893,7 @@ def analyze_categorical_vs_categorical(df, x_column, y_column):
 
 def analyze_datetime_vs_numeric(df, x_column, y_column):
     """Analyze relationship between a datetime and a numeric column"""
-    st.write(f"### {y_column} by {x_column} (Time) Analysis")
+    st.write(f"### Time Analysis: {y_column} by {x_column}")
     
     # Add a small sleep time for UI responsiveness
     import time

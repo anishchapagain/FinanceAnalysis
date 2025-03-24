@@ -11,7 +11,8 @@ import json
 import re
 from datetime import datetime
 import os
-
+import sys
+import logging
 import visualize.visualizer_eda as visual
 
 NO_DATA_MESSAGE = "Sorry, but no matching records found. Please try a new prompt: if it's related to some specific value mention using Quotes."
@@ -45,31 +46,71 @@ def load_data(file_path=None):
             df = pd.read_csv(file_path)
         
         # Convert date columns to datetime format
-        date_columns = ['account_open_date', 'last_debit_date', 'last_credit_date', 'date_of_birth']
-        for col in date_columns:
-            if col in df.columns:
-                try:
-                    df[col] = pd.to_datetime(df[col], errors='coerce', format='%d-%b-%y')
-                except:
-                    try:
-                        # Try another format if the first one fails
-                        df[col] = pd.to_datetime(df[col], errors='coerce')
-                    except:
-                        pass
+        # date_columns = ['account_open_date', 'last_debit_date', 'last_credit_date', 'date_of_birth']
+        # for col in date_columns:
+        #     if col in df.columns:
+        #         try:
+        #             df[col] = pd.to_datetime(df[col], errors='coerce', format='%d-%b-%y')
+        #         except:
+        #             try:
+        #                 # Try another format if the first one fails
+        #                 df[col] = pd.to_datetime(df[col], errors='coerce')
+        #             except:
+        #                 pass
         
-        # Convert boolean columns
-        bool_columns = ['mobile_banking', 'internet_banking', 'account_inactive']
-        for col in bool_columns:
-            if col in df.columns:
-                # Convert Yes/No to boolean if needed
-                if df[col].dtype == 'object':
-                    df[col] = df[col].map({'Yes': True, 'No': False})
+        # # Convert boolean columns
+        # bool_columns = ['mobile_banking', 'internet_banking', 'account_inactive']
+        # for col in bool_columns:
+        #     if col in df.columns:
+        #         # Convert Yes/No to boolean if needed
+        #         if df[col].dtype == 'object':
+        #             df[col] = df[col].map({'Yes': True, 'No': False})
         
         return df
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         # Return empty DataFrame as fallback
         return pd.DataFrame()
+    
+
+def setup_logger(log_dir="logs"):
+    """Set up logger to record app activities and errors"""
+    
+    # Create logs directory if it doesn't exist
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Create a unique log filename with timestamp
+    current_time = datetime.now().strftime("%Y%m%d")
+    log_filename = os.path.join(log_dir, f"streamlit_app_{current_time}.log")
+    
+    # Configure the root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    
+    # Remove existing handlers to avoid duplicates
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+    
+    # Create file handler for logging to a file
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setLevel(logging.INFO)
+    
+    # Create console handler for logging to console
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.WARNING)  # Only warnings and errors to console
+    
+    # Create a formatter and add it to the handlers
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+    
+    # Add the handlers to the logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+logger = setup_logger()
 
 # Function to get column descriptions from LLM
 def get_column_descriptions(df):
@@ -94,13 +135,13 @@ def get_column_descriptions(df):
     - column_name: Brief description of what this column represents
     
     For example:
-    - **account_balance**: The current balance in the account
-    - **internet_banking**: Indicates if the customer uses internet banking
+    - **Account Balance**: The current balance in the account.
+    - **Internet Banking**: Indicates if the customer uses internet banking.
     
     Columns information:
     {column_info_str}
     
-    Provide ONLY the descriptions, one per line, starting with the column name followed by colon.
+    Provide ONLY the descriptions, one per line, starting with the column name in titled case without underscore followed by colon.
     """
     
     # Create the request payload
@@ -131,8 +172,7 @@ def get_column_descriptions(df):
 
 # Function to get pandas query from LLM
 def get_pandas_query(prompt, df_info, column_descriptions):
-
-    # print(f"{column_descriptions}")
+    logger.info(f"Prompt: {prompt}")
     # Define the URL for the LLM API
     url = "http://localhost:11434/api/generate"
     
@@ -196,14 +236,16 @@ def get_pandas_query(prompt, df_info, column_descriptions):
 def execute_pandas_query(query_code, df):
     try:
         # Create a local scope with the dataframe
-        local_vars = {'df': df}
+        local_vars = {'df': df} 
+        global_vars = {'px': px, 'pd': pd, 'np': np, 're': re}
         
         # Execute the code in the local scope
-        exec(query_code, {}, local_vars)
+        exec(query_code, global_vars, local_vars)
         
         # Get the result
         result = local_vars.get('result', None)
-        
+        logger.info(f"local_vars-EQuery: {result}")
+
         # Check if result exists or is NaN/None
         if result is None:
             return None, NO_DATA_MESSAGE, None
@@ -229,6 +271,7 @@ def execute_pandas_query(query_code, df):
 
         return result, None, result_type
     except Exception as e:
+        logger.warning(f"execute_pandas_query-Exception {str(e)}")
         return None, ERROR_MESSAGE, None
 
 # Function to generate summary statistics
@@ -260,7 +303,7 @@ def visualize_numeric_columns(df):
     
     # Let user select a numeric column to visualize
     selected_column = st.selectbox(
-        "**Select a numeric column to visualize:**",
+        "**Select a column to visualize:**",
         options=numeric_columns
     )
     
@@ -313,9 +356,10 @@ def visualize_numeric_columns(df):
             st.plotly_chart(fig)
             
             # Add basic statistics
-            st.write(f"**General Statistics:** {selected_column}")
+            st.info(f"**General Statistics:** {selected_column}")
             stats = df[selected_column].describe()
-            st.write(stats)
+            st.dataframe(stats, use_container_width=True)
+            # st.write(stats)
 
         elif viz_type == "Scatter":
             # For categorical data, show the top N categories
@@ -399,7 +443,7 @@ def visualize_numeric_columns(df):
             st.plotly_chart(fig)
     
     # Option to explore correlations if multiple numeric columns exist
-    if len(numeric_columns) > 1 and st.checkbox("*Explore correlations between numeric columns*"):
+    if len(numeric_columns) > 1 and st.checkbox("*Explore correlations between columns*"):
         st.divider()
         st.subheader("Correlation Analysis")
         
@@ -426,7 +470,9 @@ def visualize_numeric_columns(df):
     
 # Function to display basic info
 def show_basic_info(df):
-
+    import time
+    time.sleep(0.2)
+    columns_description = get_column_descriptions(df)
     # Display basic info about dataframe
     st.subheader("Dataset Overview")
     col1, col2 = st.columns(2)
@@ -469,7 +515,7 @@ def show_basic_info(df):
 
     # Display basic info
     with st.expander("**Column Description**", expanded=True, icon=MATERIAL_ARROW_DOWN):
-        st.markdown(get_column_descriptions(df))
+        st.info(columns_description)
     st.divider() 
 
     # Show distributions of numeric columns
@@ -532,7 +578,6 @@ def format_indian_currency(amount):
         return f"{formatted_integer}.{decimal_part}"
     except:
         return str(amount)  # Return original amount if formatting fails
-
 
 # Function to convert DataFrame to image
 def df_to_image(df, filename="dataframe.png"):
@@ -625,7 +670,16 @@ def main():
         - Show top 10 customers with highest balance
         - Describe data or give some information about data
         - Data Sample
+        - Describe data
+        - list me all inactive account with balance > 50000 and account opened before 2015
+        - list some data with balance > 50000 and internet banking disabled
+        - Plot bar chart with average balance from industry, sector and branch
         - Show inactive accounts with a balance greater than 100000
+        - Generate a chart showing the distribution of account types across different economic sectors
+        - list me all inactive account with balance > 50000
+        - Create a bar chart showing the number of active accounts per bank branch
+        - Show me max, min, average account balance for year 2015 by industry
+        - how many sector are there and which is the most common
         - Show customers from branch Damauli
         - Plot active vs inactive accounts
         - What is the average balance of the accounts?
@@ -669,20 +723,21 @@ def main():
                 with st.spinner("Processing your query..."):
                     # Get the pandas query from LLM
                     pandas_query = get_pandas_query(query, df, st.session_state.column_descriptions)
-                    
+                    logger.info(f"Executing pandas query: {pandas_query}")
+
                     # Display the generated code
                     with st.expander("View Generated Code", icon=MATERIAL_ARROW_DOWN):
                         st.code(pandas_query, language="python")
                     
                     # Execute the query
                     result, error, result_type = execute_pandas_query(pandas_query, df)
-                    
+                    logger.info(f"Execute_pandas_queryResult: {result} <> {error} <> {result_type}")
                     if error:
                         st.error(error)
                         st.session_state.messages.append({
                             "role": "assistant", 
                             "type": "error", 
-                            "content": f"Error: {error}"
+                            "content": f"Some issue has occurred, rewrite your prompt. Error: {error}"
                         })
                     else:
                         if result is None:
@@ -717,6 +772,7 @@ def main():
                                 "content": response_content,
                                 "data": result
                             })
+
                         elif result_type == "plotly_figure":
                             st.plotly_chart(result)
                             response_content = "Here's the visualization you requested"
@@ -726,6 +782,7 @@ def main():
                                 "content": response_content,
                                 "data": result
                             })
+
                         elif result_type == "numeric":
                             if isinstance(result, float):
                                 formatted_result = format_indian_currency(result)
@@ -734,6 +791,7 @@ def main():
                             else:
                                 st.info(f"Result: {result}")
                                 response_content = f"The result is: {result}"
+
                             st.session_state.messages.append({
                                 "role": "assistant", 
                                 "type": "numeric", 
@@ -751,3 +809,39 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Issues
+# I am an AI language model designed to understand and convert natural language queries into pandas Python code. My purpose is to assist data analysts and other users who work with pandas DataFrames by providing quick, accurate, and efficient solutions to their data-related tasks. How can I help you today?
+# Answer with Axes(0.125,0.11;0.775x0.77), if has show()
+# Result other than 'result' manage!
+# Sometime default value is also used, need to show them in answer or tips
+# Conversation saver
+# #1. What are the top 5 most active customers based on the number of transactions (debits and credits)?
+
+# 2. How has the average account balance changed over time, categorized by customer industry?
+
+# 3. Which bank branch has the highest total account balance and what is that balance?
+
+# 4. How many customers have mobile banking enabled and what are their average account balances?
+
+# 5. What is the most common nationality among customers with a current account?
+
+# 6. Generate a chart showing the distribution of account types across different economic sectors.
+
+# 7. Calculate the total credit and debit amounts for each customer and find out who has made the largest transactions.
+
+# 8. How many customers have not completed KYC (Know Your Customer) process yet?
+
+# 9. What is the average number of days between the last debit and the last credit for each account type?
+
+# 10. List all customers who have both mobile banking and internet banking enabled, along with their customer IDs and names.
+# 1. Plot the distribution of account balances across different customer industries.
+# 2. Create a bar chart showing the number of active accounts per bank branch.
+# 3. Generate a line graph to show the trend of average local currency balance over time for each account category.
+# 4. Display a pie chart illustrating the proportion of customers who have mobile banking enabled versus those who do not.
+# 5. Plot a histogram of ages (calculated from date_of_birth) and categorize them into bins based on customer_industry.
+# 6. Create a scatter plot showing the relationship between last_debit_date and last_credit_date for each customer_id.
+# 7. Generate a box plot to compare the account_balance distribution across different residency_status categories.
+# 8. Plot a stacked bar chart showing the number of active accounts per bank_branch by customer_industry.
+# 9. Create a line graph to show the trend of average balance in local currency over time, split by mobile_banking status.
+# 10. Generate a scatter plot showing the correlation between account_balance and date_of_birth for each nationality.
