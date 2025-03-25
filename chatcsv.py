@@ -170,9 +170,25 @@ def get_column_descriptions(df):
     except Exception as e:
         return f"Error connecting to LLM: {str(e)}"
 
+
+def clean_query(generated_code):
+    # Remove extra spaces and newlines, show() and other common functions
+    if generated_code is None:
+        return ""
+    if "result.show()" in generated_code:
+        logger.info("clean_query - result.show() found")
+        generated_code = generated_code.replace("result.show()", "")
+    
+    generated_code = generated_code.strip()
+    
+    # Remove any trailing punctuation
+    generated_code = generated_code.rstrip('.?!')
+    
+    return generated_code
+
 # Function to get pandas query from LLM
 def get_pandas_query(prompt, df_info, column_descriptions):
-    logger.info(f"Prompt: {prompt}")
+    logger.info(f"get_pandas_query Prompt: {prompt}")
     # Define the URL for the LLM API
     url = "http://localhost:11434/api/generate"
     
@@ -180,12 +196,30 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
     
     # Create the system prompt
-    system_prompt = f"""
+    system_prompt_old = f"""
     You are a data analyst assistant that converts natural language queries to pandas Python code.
     - Only respond with valid Python code for pandas.
     - Do not include any explanation or markdown formatting.
     - The code should start with 'result = ' and return a pandas DataFrame or a calculated value.
     - The dataframe is already loaded as 'df'.
+    
+    When generating code for data visualization tasks:
+    1. Always use Plotly (import plotly.express as px, import plotly.graph_objects as go) for all visualizations
+    2. Do not use matplotlib, seaborn, or pandas plotting functionality
+    3. Do not include fig.show() commands
+    4. Ensure all plots have proper labels, titles, and legends
+    5. Optimize for readability and interactivity
+    
+    When identifying rows with maximum/minimum values:
+    1. Always return results as a DataFrame, not as a Series
+    2. Use methods that preserve DataFrame structure (e.g., .loc with double brackets or .iloc[[index]])
+    3. For single row selections, ensure they remain as DataFrames by using .to_frame().T when necessary, or by selecting with double brackets
+    
+    When working with dates:
+    1. Always convert string date columns to datetime using pd.to_datetime() before any filtering
+    2. Use .dt accessor to extract components (year, month, day) from datetime columns
+    3. Include proper date conversion code in all queries involving date comparisons
+
     - Here are the columns and their data types:
     {json.dumps(columns_info, indent=2)}
     
@@ -202,7 +236,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     - Include adequate related columns in the result.
     - Assume case sensitivity during query formation.
     """
-    
+
     # Create the request payload
     payload = {
         "model": "qwen2.5-coder:7b",  # or any other model you have
@@ -226,6 +260,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
             generated_code = re.sub(r'```python\s*', '', generated_code)
             generated_code = re.sub(r'```\s*', '', generated_code)
             
+            generated_code = clean_query(generated_code)
             return generated_code
         else:
             return f"Error: {response.status_code} - {response.text}"
@@ -236,15 +271,17 @@ def get_pandas_query(prompt, df_info, column_descriptions):
 def execute_pandas_query(query_code, df):
     try:
         # Create a local scope with the dataframe
+        result_type = None
         local_vars = {'df': df} 
         global_vars = {'px': px, 'pd': pd, 'np': np, 're': re}
         
         # Execute the code in the local scope
+        logger.info("execute_pandas_query..............")
         exec(query_code, global_vars, local_vars)
         
         # Get the result
         result = local_vars.get('result', None)
-        logger.info(f"local_vars-EQuery: {result}")
+        
 
         # Check if result exists or is NaN/None
         if result is None:
@@ -269,9 +306,10 @@ def execute_pandas_query(query_code, df):
         else:
             result_type = "other"
 
+        # if type=other and result has Axes() then it is a plot retry the query
         return result, None, result_type
     except Exception as e:
-        logger.warning(f"execute_pandas_query-Exception {str(e)}")
+        logger.warning(f"execute_pandas_query - Exception {str(e)}")
         return None, ERROR_MESSAGE, None
 
 # Function to generate summary statistics
@@ -483,7 +521,7 @@ def show_basic_info(df):
     st.divider() 
     # Show a sample of the data
     with st.expander("**Data Preview**", expanded=True, icon=MATERIAL_ARROW_DOWN):
-        st.dataframe(df.head(20), use_container_width=True)
+        st.dataframe(df.head(1), use_container_width=True)
     st.divider() 
     # Display sample data in the main area
     with st.expander("**View Sample Data, by Columns**", expanded=True, icon=MATERIAL_ARROW_DOWN):
@@ -659,41 +697,50 @@ def main():
         st.header("Query/Chat with Your Data")
         
         # Show data sample in sidebar
-        with st.expander("**View Sample Data**", expanded=True, icon=MATERIAL_ARROW_DOWN):
-            st.write('''Displays the sample data from the choosen file.''')
-            st.dataframe(df.head(10), use_container_width=True)
-        
-        st.caption("""
-        Enter your questions in natural language to analyze the banking data.
-        
-        Example queries:
-        - Show top 10 customers with highest balance
-        - Describe data or give some information about data
-        - Data Sample
-        - Describe data
-        - list me all inactive account with balance > 50000 and account opened before 2015
-        - list some data with balance > 50000 and internet banking disabled
-        - Plot bar chart with average balance from industry, sector and branch
-        - Show inactive accounts with a balance greater than 100000
-        - Generate a chart showing the distribution of account types across different economic sectors
-        - list me all inactive account with balance > 50000
-        - Create a bar chart showing the number of active accounts per bank branch
-        - Show me max, min, average account balance for year 2015 by industry
-        - how many sector are there and which is the most common
-        - Show customers from branch Damauli
-        - Plot active vs inactive accounts
-        - What is the average balance of the accounts?
-        - What is the average balance for branch Damauli?
-        - Show average amount for sector 'LOCAL - PERSONS' in Head Office
-        - list 5 account holder from damauli with amount > than 500000
-        - What is the ratio of active to inactive account
-        - how many account categories are there provide me with their average amount
-        - Show the distribution of account types
-        """)
+        with st.expander("**Sample Data**", expanded=False, icon=MATERIAL_ARROW_DOWN):
+            st.info('''Displays the sample data from the choosen file.''')            
+            # st.dataframe(df.sample(10), use_container_width=True)
+            st.dataframe(df.head(1), use_container_width=True)
+            
+        with st.expander("**Sample Prompts**", expanded=False, icon=MATERIAL_ARROW_DOWN):
+            st.info('''Enter your questions in natural language to analyze the banking data..''')
+            st.code("""            
+            Example queries:
+            - provide me some prompts to analyze current dataset using sector
+            - provide me some prompts to analyze current dataset
+            - Show top 10 customers with highest balance
+            - Describe data or give some information about data
+            - Data Sample
+            - Calculate the total account balance for each economic sector and find the average, minimum, and maximum balance
+            - provide me some prompts to analyze current dataset using sector
+            - Describe data
+            - Plot the distribution of account balances across different sectors
+            - list me all inactive account with balance > 50000 and account opened before 2015
+            - list some data with balance > 50000 and internet banking disabled
+            - Plot bar chart with average balance from industry, sector and branch
+            - Show inactive accounts with a balance greater than 100000
+            - Generate a chart showing the distribution of account types across different economic sectors
+            - list me all inactive account with balance > 50000
+            - Create a bar chart showing the number of active accounts per bank branch
+            - Show me max, min, average account balance for year 2015 by industry
+            - how many sector are there and which is the most common
+            - Show customers from branch Damauli
+            - Plot active vs inactive accounts
+            - Create a bar chart showing the distribution of account types by customer industry.
+            - What is the average balance of the accounts?
+            - What is the average balance for branch Damauli?
+            - Show average amount for sector 'LOCAL - PERSONS' in Head Office
+            - list 5 account holder from damauli with amount > than 500000
+            - What is the ratio of active to inactive account
+            - how many account categories are there provide me with their average amount
+            - Show the distribution of account types
+            """)
         
         # Display chat messages
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
+                
+                # Display text messages
                 st.markdown(message["content"])
                 
                 # Display data frames, figures, etc.
@@ -704,7 +751,7 @@ def main():
                         st.plotly_chart(message["data"])
                     elif message["type"] == "numeric":
                         st.info(f"Result: {message['data']}")
-
+                    
         # Input for the query
         if query := st.chat_input("Ask something about the data...LLM will generate the output based on the query. Try to be specific."):
             # Check if LLM is connected
@@ -723,22 +770,47 @@ def main():
                 with st.spinner("Processing your query..."):
                     # Get the pandas query from LLM
                     pandas_query = get_pandas_query(query, df, st.session_state.column_descriptions)
-                    logger.info(f"Executing pandas query: {pandas_query}")
+                    logger.info(f"execute_pandas_query-: {pandas_query}")
 
-                    # Display the generated code
-                    with st.expander("View Generated Code", icon=MATERIAL_ARROW_DOWN):
-                        st.code(pandas_query, language="python")
+                    # # Display the generated code
+                    # with st.expander("View Generated Code", icon=MATERIAL_ARROW_DOWN):
+                    #     st.code(pandas_query, language="python")
                     
                     # Execute the query
                     result, error, result_type = execute_pandas_query(pandas_query, df)
-                    logger.info(f"Execute_pandas_queryResult: {result} <> {error} <> {result_type}")
+                    if result_type == "plotly_figure":
+                        logger.info(f"execute_pandas_query - ResultP: {result['data'][0]['name']} - {result['data'][0]['type']} -- ERROR:{error} -- TYPE:{result_type}")
+                    else:
+                        logger.info(f"execute_pandas_query - Result: {result} -- ERROR:{error} -- TYPE:{result_type}")
+                    
+                    # Do not display "View Generated Code"
+                    # Display the generated code
+                    with st.expander("View Generated Code", icon=MATERIAL_ARROW_DOWN):
+                        st.code(pandas_query, language="python") # Show only for texts not for plots, dataframes, etc.
+                        # if result is None and result_type is None: 
+                        #     logger.info(f"Result Expander: {result} -- ERROR:{error} -- TYPE:{result_type}")
+                        #     st.warning(ERROR_MESSAGE)
+                        # else:
+                        #     st.code(pandas_query, language="python")
+                    
                     if error:
-                        st.error(error)
-                        st.session_state.messages.append({
-                            "role": "assistant", 
-                            "type": "error", 
-                            "content": f"Some issue has occurred, rewrite your prompt. Error: {error}"
-                        })
+                        logger.error(f"execute_pandas_query - Error: {error}")
+
+                        expected_texts = ["Which", "What", "How", "List", "Visualize", "Create","Calculate", "Identify", "Generate", "Display", "Find", "Show"]
+                        if not any(elem in pandas_query for elem in expected_texts):
+                            st.error(error)
+                            st.session_state.messages.append({
+                                "role": "assistant", 
+                                "type": "text", 
+                                "content": pandas_query
+                            })
+                        else:
+                            logger.error(f"After execution error: {error} for Pandas_query")
+                            # st.session_state.messages.append({
+                            #     "role": "assistant", 
+                            #     "type": "error", 
+                            #     "content": f"Some issue has occurred, rewrite your prompt. Error: {error}"
+                            # })
                     else:
                         if result is None:
                             st.info("No matching records found for your query.")
@@ -798,6 +870,17 @@ def main():
                                 "content": response_content,
                                 "data": result
                             })
+                        elif result_type == "other":
+                            if 'result = df' in pandas_query:
+                                st.dataframe(result)
+                                response_content = f"Found {len(result)} matching records"
+                                # Store the result for message history
+                                st.session_state.messages.append({
+                                    "role": "assistant", 
+                                    "type": "dataframe", 
+                                    "content": response_content,
+                                    "data": result
+                                })
                         else:
                             st.write(result)
                             response_content = str(result)
