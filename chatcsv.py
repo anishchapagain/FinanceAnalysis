@@ -196,7 +196,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
     
     # Create the system prompt
-    system_prompt_old = f"""
+    system_prompt = f"""
     You are a data analyst assistant that converts natural language queries to pandas Python code.
     - Only respond with valid Python code for pandas.
     - Do not include any explanation or markdown formatting.

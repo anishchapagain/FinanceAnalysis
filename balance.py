@@ -98,7 +98,6 @@ def format_nepali_currency_new(amount):
             return "N/A"
     else:
         return "N/A"
-    
 
 # Function to create a download link for the dataframe
 def get_table_download_link(df, filename, text):
@@ -106,6 +105,193 @@ def get_table_download_link(df, filename, text):
     b64 = base64.b64encode(csv.encode()).decode()
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}.csv">{text}</a>'
     return href
+
+
+def calculate_financial_metrics(df):
+        """
+        Calculate financial metrics from the provided dataframe.
+        Metrices are calculate from the balance sheet and income statement data.
+        """
+        metrics = {}
+        # Convert dataframe to dict for easier access, since we have only one row
+        data = df.iloc[0].to_dict()
+        
+        # Existing Fields:
+        # Total Non-Current Assets + Total Current Assets = Total Assets
+        # Total Current Liabilities + Non-Current Liabilities = Total Liabilities
+        # Total Liabilities & Equity = Total Liability + Total Equity
+
+        
+        print(f"1-Net Income: {data['Net Income']}, Sales Revenue: {data['Sales Revenue']}")
+        # Calculate Total Assets
+        metrics["Total Current Assets"] = data["Cash"] + data["Accounts Receivable"] + data["Inventory"] 
+        metrics["Total Fixed Assets"] = data["Property Plant & Equipment"] + data["Long-term Investments"] # Total Non-Current Assets
+        metrics["Total Assets"] = metrics["Total Current Assets"] + metrics["Total Fixed Assets"]
+        
+        # Calculate Total Liabilities
+        metrics["Total Current Liabilities"] = data["Accounts Payable"] + data["Short-term Debt"]
+        metrics["Total Long-Term Liabilities"] = data["Long-term Debt"]
+        metrics["Total Liabilities"] = metrics["Total Current Liabilities"] + metrics["Total Long-Term Liabilities"]
+        
+        # Calculate Total Equity
+        metrics["Total Equity"] = data["Common Stock"] + data["Retained Earnings"]
+        
+        # Calculate Depreciation (estimated as 5% of PP&E for this example)
+        metrics["Depreciation"] = data["Property Plant & Equipment"] * 0.05 # TODO : Depreciation : 5% of PP&E
+        
+        # Calculate Amortization (estimated as 2% of Long-term Investments for this example)
+        metrics["Amortization"] = data["Long-term Investments"] * 0.02 # TODO : Amortization : 2% of Long-term Investments
+        
+        # Income Statement
+        # operating_income = data["Gross Profit"] - data["total_operating_expenses"] # TODO : Operating Income : Gross Profit - Total Operating Expenses
+        
+        # Calculate EBITDA: Net Profit + Depreciation (abs) + Amortization (abs)   ---- # 1:  (+ve : Green, -ve : Red)
+        # 1
+        metrics["EBITDA"] = data["Operating Income"] + metrics["Depreciation"] + metrics["Amortization"] # TODO : EBITDA : Operating Income + Depreciation + Amortization
+        
+        # Calculate Net Tangible Assets
+        metrics["NTA"] = metrics["Total Assets"] - metrics["Total Liabilities"]
+        
+        # Required financial ratios
+        # Debt-to-Equity Ratio (D/E) # 2 (Good) is good : Green, 2-3 (Moderate) is ok : Amber, > 3 (High) is bad : Red
+        # DE Ratio (Total Liabilities / Total Equity): Leveraged companies have higher DE ratio
+        metrics["DE Ratio"] = metrics["Total Liabilities"] / metrics["Total Equity"]   # Leverage Ratio (MAX: )
+        
+        # Gear Ratio (Total Debt / Total Equity) # 3: (+ve : Green, -ve : Red)               (Total Equity | Net Worth) = Total Bank Debt / Total Equity (Max: 4:1)
+        metrics["Gear Ratio"] = (data["Short-term Debt"] + data["Long-term Debt"]) / metrics["Total Equity"]
+        
+        # Liquidity Ratio (Current Assets / Current Liabilities)
+        metrics["Liquidity Ratio"] = metrics["Total Current Assets"] / metrics["Total Current Liabilities"]
+        
+        # Leverage Ratio (Total Assets / Total Equity)
+        metrics["Leverage Ratio"] = metrics["Total Assets"] / metrics["Total Equity"]
+        
+        # Current Ratio (Current Assets / Current Liabilities)
+        # 6
+        # Strong: 2.0 or red, > 1.5: Green, Adequate: 1.5, Weak: 1.0 or lower 
+        metrics["Current Ratio"] = metrics["Total Current Assets"] / metrics["Total Current Liabilities"] # 1.5:1 (Good) is good : Green, 1:1 (Moderate) is ok : Amber, < 1:1 (Weak) is bad : Red
+        
+        # Quick Ratio (Cash + Accounts Receivable) / Current Liabilities
+        # 7 : current asset - stock
+        # Above 1.0 is good : Green, below:1 > Red                                      # 0.7 to 1.0 is ok : Amber, < 0.7 is bad : Red
+        metrics["Quick Ratio"] = (data["Cash"] + data["Accounts Receivable"]) / metrics["Total Current Liabilities"]  # Current Asset - Inventory|stock|work in progress
+        
+
+        # Net Profit Margin (Net Income / Sales Revenue) # 2:  (+ve : Green, -ve : Red) -- Income Statement
+        # ROA = Net Income / Total Assets # 3:  (+ve : Green, -ve : Red) -- Balance Sheet & Income Statement
+
+        # Return on Assets (ROA) (Net Income / Total Assets)
+        metrics["ROA"] = data["Net Income"] / metrics["Total Assets"] # Balance Sheet & Income Statement
+        # print(f"ROA {metrics['ROA']} = {data['Net Income']} - {metrics['Total Assets']}")
+        
+        # Interest Coverage Ratio (EBIT / Interest Expense) # 4 (Strong) is good : Green, 3-4 (Moderate) is ok : Amber, < 3 (Weak) is bad : Red
+        # metrics["Interest Coverage Ratio"] = data["Operating Income"] / data["Interest Expense"]  # TODO : Interest Coverage : - Operating Income / Interest Expense # Revolving around 1.5 to 2.0 is good
+        metrics["Interest Coverage Ratio"] = data["Operating Income"] / abs(data["Interest Expense"])  # TODO : Interest Coverage : - Operating Income / Interest Expense
+        # Interest Expense: Negative values are converted to positive for calculation (Amber / Red flag)
+
+
+        # Revolving: Working Capital
+        # Product Type: Revolving (ICR | DSCR) SAME all others are to be calculated
+        # Term Loan: CR | QR | ICR (not required)
+        # Revolving & term loan: ALL Ratio Required
+
+        # Permanent Working Capital
+
+        # Rank the Ratio
+        # EBITDA - 1 (if -ve )
+        
+        # Decision Support: Preliminary Analysis
+        # Risk Based Pricing #  TODO
+        # Credit Score: 750+ (Green), 700-750 (Amber), < 700 (Red) # TODO
+
+        # Debt Service Coverage Ratio (EBITDA / (Principal Payments + Interest Expense))  # 5:  
+        # Assuming Principal Payments is 10% of Long-term Debt for this example
+        principal_payments = data["Long-term Debt"] * 0.1 # TODO : Principal Payments : 10% of Long-term Debt
+        debt_service = principal_payments + abs(data["Interest Expense"]) # TODO: Debt Service : Principal Payments + Interest Expense
+        # dscr = (principal_payments + abs(data["Interest Expense"])) # TODO: DSCR : EBITDA / (Principal Payments + Interest Expense)  # 1 (Strong) is good : Green, 0.9 :Amber,  < 0.9 (Weak) is bad : Red
+        if debt_service > 0:
+            metrics["DSCR"] = metrics["EBITDA"] / debt_service
+        else:
+            metrics["DSCR"] = float("inf") if metrics["EBITDA"] > 0 else 0
+        
+        
+        # NTA: Stock Receivables : 
+        # metrics["Stock Receivables"] = metrics["NTA"] / data["Accounts Receivable"] # TODO : Stock Receivables : NTA / Accounts Receivable
+        
+        # Profitability Metrics
+        metrics["Gross Margin"] = data["Gross Profit"] / data["Sales Revenue"]
+        metrics["Operating Margin"] = data["Operating Income"] / data["Sales Revenue"]
+        metrics["Net Profit Margin"] = data["Net Income"] / data["Sales Revenue"] # Income Statement (0.1667)
+        metrics["Return on Equity"] = data["Net Income"] / metrics["Total Equity"]
+        
+        # Efficiency Metrics
+        metrics["Asset Turnover"] = data["Sales Revenue"] / metrics["Total Assets"]
+        metrics["Inventory Turnover"] = data["Cost of Goods Sold"] / data["Inventory"]
+        metrics["Receivables Turnover"] = data["Sales Revenue"] / data["Accounts Receivable"]
+        
+        # Cash Flow Metrics
+        metrics["Operating Cash Flow Ratio"] = data["Net Cash from Operations"] / metrics["Total Current Liabilities"] # TODO Cash Flow
+        metrics["Cash Flow to Debt Ratio"] = data["Net Cash from Operations"] / metrics["Total Liabilities"] # TODO Cash Flow
+        
+        # Negative values for Cash Flow to Debt Ratio are not possible, so we set it to 0 if negative
+        # - COGS
+
+        # Convert to dataframe for display
+        metrics_df = pd.DataFrame({k: [v] for k, v in metrics.items()})
+        print(f"1-Net Income: {data['Net Income']}, Sales Revenue: {data['Sales Revenue']}")
+        print(f"1-Metrices DF: {metrics_df.to_json()}")
+        return metrics_df
+
+
+def format_ratio(ratio_name, value):
+            """
+            Format the financial ratio value with appropriate labels and colors.
+            """
+            if ratio_name == "DE Ratio": # DE Ratio - Leverage Ratio
+                if value <= 1.5:
+                    return f"{value:.2f} (Good)"
+                elif value <= 2.0:
+                    return f"{value:.2f} (Moderate)"
+                else:
+                    return f"{value:.2f} (High)"
+            elif ratio_name == "Current Ratio" or ratio_name == "Liquidity Ratio":
+                if value >= 2.0:
+                    return f"{value:.2f} (Strong)"
+                elif value >= 1.0:
+                    return f"{value:.2f} (Adequate)"
+                else:
+                    return f"{value:.2f} (Weak)"
+            elif ratio_name == "Quick Ratio":
+                if value >= 1.0:
+                    return f"{value:.2f} (Strong)"
+                elif value >= 0.7:
+                    return f"{value:.2f} (Adequate)"
+                else:
+                    return f"{value:.2f} (Weak)"
+            elif ratio_name in ["ROA", "Return on Equity"]:
+                if value >= 0.1:
+                    return f"{value:.2%} (Good)"
+                elif value >= 0.05:
+                    return f"{value:.2%} (Moderate)"
+                else:
+                    return f"{value:.2%} (Low)"
+            elif ratio_name == "Interest Coverage Ratio":
+                if value >= 3.0:
+                    return f"{value:.2f} (Strong)"
+                elif value >= 1.5:
+                    return f"{value:.2f} (Adequate)"
+                else:
+                    return f"{value:.2f} (Weak)"
+            elif ratio_name == "DSCR":
+                if value >= 1.5:
+                    return f"{value:.2f} (Strong)"
+                elif value >= 1.0:
+                    return f"{value:.2f} (Adequate)"
+                else:
+                    return f"{value:.2f} (Weak)"
+            else:
+                return f"{value:.2f}"
+            
 
 # Sidebar
 st.sidebar.title("Upload Financial Data")
@@ -116,30 +302,30 @@ if st.sidebar.button("Use Sample Data"):
     # Create sample data based on the structure from balance.csv
     sample_data = {
         "Cash": [500000],
-        "Accounts Receivable": [300000],
-        "Inventory": [450000],
-        "Property Plant & Equipment": [1200000],
-        "Long-term Investments": [800000],
-        "Accounts Payable": [250000],
-        "Short-term Debt": [150000],
-        "Long-term Debt": [700000],
-        "Common Stock": [1000000],
-        "Retained Earnings": [1150000],
-        "Sales Revenue": [2500000],
-        "Cost of Goods Sold": [1500000],
+        "Accounts Receivable": [1200000],
+        "Inventory": [3000000],
+        "Property Plant & Equipment": [10000000],
+        "Long-term Investments": [0],
+        "Accounts Payable": [3000000],
+        "Short-term Debt": [2000000],
+        "Long-term Debt": [4000000],
+        "Common Stock": [2000000],
+        "Retained Earnings": [3700000],
+        "Sales Revenue": [15000000],
+        "Cost of Goods Sold": [-12000000],
         "Gross Profit": [1000000],
-        "Research & Development": [200000],
-        "Marketing": [150000],
-        "Administrative Costs": [300000],
-        "Operating Income": [350000],
-        "Interest Expense": [70000],
-        "Income Before Tax": [280000],
-        "Tax Expense_20": [56000],
-        "Net Income": [224000],
-        "Net Cash from Operations": [300000],
-        "Net Cash from Investing": [-200000],
-        "Net Cash from Financing": [-50000],
-        "Net Change in Cash": [50000]
+        "Research & Development": [0],
+        "Marketing": [0],
+        "Administrative Costs": [0],
+        "Operating Income": [0],
+        "Interest Expense": [0],
+        "Income Before Tax": [0],
+        "Tax Expense_20": [0],
+        "Net Income": [0],
+        "Net Cash from Operations": [-3500000],
+        "Net Cash from Investing": [-500000],
+        "Net Cash from Financing": [-1000000],
+        "Net Change in Cash": [-5000000]
     }
     df = pd.DataFrame(sample_data)
     # Identify numeric columns
@@ -172,120 +358,9 @@ if uploaded_file is not None:
     with st.expander("Raw Financial Data", expanded=False):
         st.dataframe(df)
         st.markdown(get_table_download_link(df, "financial_data", "Download CSV"), unsafe_allow_html=True)
-    
-    # Calculate derived data elements
-    def calculate_financial_metrics(df):
-        metrics = {}
-        # Convert dataframe to dict for easier access, since we have only one row
-        data = df.iloc[0].to_dict()
         
-        # Calculate Total Assets
-        metrics["Total Current Assets"] = data["Cash"] + data["Accounts Receivable"] + data["Inventory"]
-        metrics["Total Fixed Assets"] = data["Property Plant & Equipment"] + data["Long-term Investments"]
-        metrics["Total Assets"] = metrics["Total Current Assets"] + metrics["Total Fixed Assets"]
-        
-        # Calculate Total Liabilities
-        metrics["Total Current Liabilities"] = data["Accounts Payable"] + data["Short-term Debt"]
-        metrics["Total Long-Term Liabilities"] = data["Long-term Debt"]
-        metrics["Total Liabilities"] = metrics["Total Current Liabilities"] + metrics["Total Long-Term Liabilities"]
-        
-        # Calculate Total Equity
-        metrics["Total Equity"] = data["Common Stock"] + data["Retained Earnings"]
-        
-        # Calculate Depreciation (estimated as 5% of PP&E for this example)
-        metrics["Depreciation"] = data["Property Plant & Equipment"] * 0.05 # TODO : Depreciation : 5% of PP&E
-        
-        # Calculate Amortization (estimated as 2% of Long-term Investments for this example)
-        metrics["Amortization"] = data["Long-term Investments"] * 0.02 # TODO : Amortization : 2% of Long-term Investments
-        
-        # Calculate EBITDA: Net Profit + Depreciation (abs) + Amortization (abs)   ---- # 1:  (+ve : Green, -ve : Red)
-        # 1
-        metrics["EBITDA"] = data["Operating Income"] + metrics["Depreciation"] + metrics["Amortization"] # TODO : EBITDA : Operating Income + Depreciation + Amortization
-        
-        # Calculate Net Tangible Assets
-        metrics["NTA"] = metrics["Total Assets"] - metrics["Total Liabilities"]
-        
-        # Required financial ratios
-        # Debt-to-Equity Ratio (D/E) # 2 (Good) is good : Green, 2-3 (Moderate) is ok : Amber, > 3 (High) is bad : Red
-        # DE Ratio (Total Liabilities / Total Equity): Leveraged companies have higher DE ratio
-        metrics["DE Ratio - Leverage Ratio"] = metrics["Total Liabilities"] / metrics["Total Equity"]   # Leverage Ratio (MAX: )
-        
-        # Gear Ratio (Total Debt / Total Equity) # 3: (+ve : Green, -ve : Red)               (Total Equity | Net Worth) = Total Bank Debt / Total Equity (Max: 4:1)
-        metrics["Gear Ratio"] = (data["Short-term Debt"] + data["Long-term Debt"]) / metrics["Total Equity"]
-        
-        # Liquidity Ratio (Current Assets / Current Liabilities)
-        metrics["Liquidity Ratio"] = metrics["Total Current Assets"] / metrics["Total Current Liabilities"]
-        
-        # Leverage Ratio (Total Assets / Total Equity)
-        metrics["Leverage Ratio"] = metrics["Total Assets"] / metrics["Total Equity"]
-        
-        # Current Ratio (Current Assets / Current Liabilities)
-        # 6
-        # Strong: 2.0 or red, > 1.5: Green, Adequate: 1.5, Weak: 1.0 or lower 
-        metrics["Current Ratio"] = metrics["Total Current Assets"] / metrics["Total Current Liabilities"] # 1.5:1 (Good) is good : Green, 1:1 (Moderate) is ok : Amber, < 1:1 (Weak) is bad : Red
-        
-        # Quick Ratio (Cash + Accounts Receivable) / Current Liabilities
-        # 7 : current asset - stock
-        # Above 1.0 is good : Green, below:1 > Red                                      # 0.7 to 1.0 is ok : Amber, < 0.7 is bad : Red
-        metrics["Quick Ratio"] = (data["Cash"] + data["Accounts Receivable"]) / metrics["Total Current Liabilities"]  # Current Asset - Inventory|stock|work in progress
-        
-        # Return on Assets (ROA) (Net Income / Total Assets)
-        metrics["ROA"] = data["Net Income"] / metrics["Total Assets"]
-        # print(f"ROA {metrics['ROA']} = {data['Net Income']} - {metrics['Total Assets']}")
-        
-        # Interest Coverage Ratio (EBIT / Interest Expense) # 4 (Strong) is good : Green, 3-4 (Moderate) is ok : Amber, < 3 (Weak) is bad : Red
-        # metrics["Interest Coverage Ratio"] = data["Operating Income"] / data["Interest Expense"]  # TODO : Interest Coverage : - Operating Income / Interest Expense # Revolving around 1.5 to 2.0 is good
-        metrics["Interest Coverage Ratio"] = data["Operating Income"] / abs(data["Interest Expense"])  # TODO : Interest Coverage : - Operating Income / Interest Expense
-        # Interest Expense: Negative values are converted to positive for calculation (Amber / Red flag)
-
-        # Revolving: Working Capital
-        # Product Type: Revolving (ICR | DSCR) SAME all others are to be calculated
-        # Term Loan: CR | QR | ICR (not required)
-        # Revolving & term loan: ALL Ratio Required
-
-        # Permanent Working Capital
-
-        # Rank the Ratio
-        # EBITDA - 1 (if -ve )
-        
-        # Decision Support: Preliminary Analysis
-        # Risk Based Pricing #  TODO
-        # Credit Score: 750+ (Green), 700-750 (Amber), < 700 (Red) # TODO
-
-        # Debt Service Coverage Ratio (EBITDA / (Principal Payments + Interest Expense))  # 5:  
-        # Assuming Principal Payments is 10% of Long-term Debt for this example
-        principal_payments = data["Long-term Debt"] * 0.1 # TODO : Principal Payments : 10% of Long-term Debt
-        dscr = (principal_payments + abs(data["Interest Expense"])) # TODO: DSCR : EBITDA / (Principal Payments + Interest Expense)  # 1 (Strong) is good : Green, 0.9 :Amber,  < 0.9 (Weak) is bad : Red
-        if dscr > 0:
-            metrics["DSCR"] = metrics["EBITDA"] / dscr
-        else:
-            metrics["DSCR"] = 0
-        
-        
-        # NTA: Stock Receivables : 
-        # metrics["Stock Receivables"] = metrics["NTA"] / data["Accounts Receivable"] # TODO : Stock Receivables : NTA / Accounts Receivable
-        
-        # Profitability Metrics
-        metrics["Gross Margin"] = data["Gross Profit"] / data["Sales Revenue"]
-        metrics["Operating Margin"] = data["Operating Income"] / data["Sales Revenue"]
-        metrics["Net Profit Margin"] = data["Net Income"] / data["Sales Revenue"]
-        metrics["Return on Equity"] = data["Net Income"] / metrics["Total Equity"]
-        
-        # Efficiency Metrics
-        metrics["Asset Turnover"] = data["Sales Revenue"] / metrics["Total Assets"]
-        metrics["Inventory Turnover"] = data["Cost of Goods Sold"] / data["Inventory"]
-        metrics["Receivables Turnover"] = data["Sales Revenue"] / data["Accounts Receivable"]
-        
-        # Cash Flow Metrics
-        metrics["Operating Cash Flow Ratio"] = data["Net Cash from Operations"] / metrics["Total Current Liabilities"] # TODO Cash Flow
-        metrics["Cash Flow to Debt Ratio"] = data["Net Cash from Operations"] / metrics["Total Liabilities"] # TODO Cash Flow
-        
-        # Convert to dataframe for display
-        metrics_df = pd.DataFrame({k: [v] for k, v in metrics.items()})
-        return metrics_df
-    
     # Calculate all metrics
-    metrics_df = calculate_financial_metrics(df)
+    metrics_df = calculate_financial_metrics(df) # 1
     
     # Create columns for the dashboard
     col1, col2 = st.columns(2)
@@ -357,57 +432,13 @@ if uploaded_file is not None:
     
     # Financial Ratios Section
     with col2:
-        st.header("Financial Ratios Analysis")
+        st.header("Financial Ratios Analysis: EBITDA | DE Ratio | Gear | Interest Coverage Ratio | DSCR | CR | QR")
         
         # Create columns for the financial ratios
         ratio_col1, ratio_col2 = st.columns(2)
         
         # Function to format ratios with color indicators
-        def format_ratio(ratio_name, value):
-            if ratio_name == "DE Ratio":
-                if value <= 1.5:
-                    return f"{value:.2f} (Good)"
-                elif value <= 2.0:
-                    return f"{value:.2f} (Moderate)"
-                else:
-                    return f"{value:.2f} (High)"
-            elif ratio_name == "Current Ratio" or ratio_name == "Liquidity Ratio":
-                if value >= 2.0:
-                    return f"{value:.2f} (Strong)"
-                elif value >= 1.0:
-                    return f"{value:.2f} (Adequate)"
-                else:
-                    return f"{value:.2f} (Weak)"
-            elif ratio_name == "Quick Ratio":
-                if value >= 1.0:
-                    return f"{value:.2f} (Strong)"
-                elif value >= 0.7:
-                    return f"{value:.2f} (Adequate)"
-                else:
-                    return f"{value:.2f} (Weak)"
-            elif ratio_name in ["ROA", "Return on Equity"]:
-                if value >= 0.1:
-                    return f"{value:.2%} (Good)"
-                elif value >= 0.05:
-                    return f"{value:.2%} (Moderate)"
-                else:
-                    return f"{value:.2%} (Low)"
-            elif ratio_name == "Interest Coverage Ratio":
-                if value >= 3.0:
-                    return f"{value:.2f} (Strong)"
-                elif value >= 1.5:
-                    return f"{value:.2f} (Adequate)"
-                else:
-                    return f"{value:.2f} (Weak)"
-            elif ratio_name == "DSCR":
-                if value >= 1.5:
-                    return f"{value:.2f} (Strong)"
-                elif value >= 1.0:
-                    return f"{value:.2f} (Adequate)"
-                else:
-                    return f"{value:.2f} (Weak)"
-            else:
-                return f"{value:.2f}"
+        
         
         # Display key financial ratios
         with ratio_col1:
@@ -448,7 +479,7 @@ if uploaded_file is not None:
         
         # For growth, we're using placeholder value since we don't have historical data
         # In a real app, this would come from comparing current to previous periods
-        growth_score = 0.65  # Placeholder
+        growth_score = 0.65  # Placeholder TODO 
         
         values = [liquidity_score, profitability_score, efficiency_score, solvency_score, growth_score]
         
@@ -1226,96 +1257,134 @@ if uploaded_file is not None:
         stress_col1, stress_col2, stress_col3 = st.columns(3)
         
         with stress_col1:
-            revenue_decline = st.slider("Revenue Decline (%)", 0, 50, 10, 5)
-            cogs_increase = st.slider("COGS Increase (%)", 0, 50, 10, 5)
+            revenue_decline = st.slider("Revenue Decline (%)", 0, 50, 10, 5,help="Percentage reduction in Sales Revenue")
+            cogs_increase = st.slider("COGS Increase (%)", 0, 30, 10, 5,help="Percentage increase in Cost of Goods Sold")
         
         with stress_col2:
-            interest_rate_increase = st.slider("Interest Rate Increase (pp)", 0, 10, 1, 1)
-            ar_decline = st.slider("Accounts Receivable Decline (%)", 0, 50, 10, 5)
+            interest_rate_increase = st.slider("Interest Rate Increase (pp)", 0, 5, 1, 1,help="Increase in interest rate in percentage points")
+            ar_decline = st.slider("Accounts Receivable Decline (%)", 0, 50, 10, 5, help="Percentage reduction in Accounts Receivable")
         
         with stress_col3:
-            debt_increase = st.slider("Debt Increase (%)", 0, 50, 10, 5)
-            cash_decline = st.slider("Cash Decline (%)", 0, 50, 10, 5)
+            debt_increase = st.slider("Debt Increase (%)", 0, 50, 10, 5, help="Percentage increase in Short-term and Long-term Debt")
+            cash_decline = st.slider("Cash Decline (%)", 0, 50, 10, 5, help="Percentage reduction in Cash")
         
         # Calculate stress test impact
         def calculate_stress_test(df, metrics_df, params):
+            """
+            Calculate stressed financial metrics based on input parameters.
+            Properly handles sign conventions in financial data.
+            
+            Args:
+                df (DataFrame): Original financial statement data
+                metrics_df (DataFrame): Original calculated financial ratios and metrics
+                params (dict): Stress test parameters (e.g. revenue_decline, cogs_increase)
+                
+            Returns:
+                tuple: (stress_df, stress_metrics) - Stressed financial statement and metrics
+            """
             # Create copies of the original data
             stress_df = df.copy()
             
-            # Apply stress parameters
-            # Revenue decline
-            stress_df.at[0, "Sales Revenue"] = df["Sales Revenue"].iloc[0] * (1 - params["revenue_decline"] / 100) 
-            # TODO # (1 - params["revenue_decline"] / 100)
-            # COGS increase
-            # (1 - params["revenue_decline"] / 100) - This creates a multiplier factor. 
-            # For example, if revenue_decline is 10%, this evaluates to (1 - 0.10) = 0.90, representing a 10% reduction.
-            # The entire calculation applies the revenue reduction factor to the original Sales Revenue.
-            # Original Sales Revenue = $2,500,000
-            # revenue_decline = 10%
-            # The calculation would be:
-            # $2,500,000 × (1 - 10/100) = $2,500,000 × 0.9 = $2,250,000
+            # original_net_income = df["Net Income"].iloc[0]
+            # original_sales_revenue = df["Sales Revenue"].iloc[0]
+            # original_total_assets = df["Total Assets"].iloc[0]
 
-            print(f"Sales Revenue: {stress_df.at[0, 'Sales Revenue']} - params: {params['revenue_decline']}")
+            # 1. Apply revenue decline (Revenue is positive, so reduce it)
+            stress_df.at[0, "Sales Revenue"] = df["Sales Revenue"].iloc[0] * (1 - params["revenue_decline"] / 100)
             
-            # print(f"Original: Net Income={df['Net Income'].iloc[0]}, Total Assets={metrics_df['Total Assets'].iloc[0]}")
+            # 2. Handle COGS correctly based on its original sign
+            # In financial statements, COGS is typically positive, but we subtract it from revenue
+            original_cogs = df["Cost of Goods Sold"].iloc[0]
+            cogs_abs = abs(original_cogs)  # Get absolute value
             
+            # Apply stress to absolute value, maintaining the original sign
+            if original_cogs >= 0:
+                # Conventional positive COGS that gets subtracted
+                stress_df.at[0, "Cost of Goods Sold"] = cogs_abs * (1 + params["cogs_increase"] / 100)
+            else:
+                # Negative COGS (unusual but handling it)
+                stress_df.at[0, "Cost of Goods Sold"] = -cogs_abs * (1 + params["cogs_increase"] / 100)
             
-            # COGS increase
-            stress_df.at[0, "Cost of Goods Sold"] = df["Cost of Goods Sold"].iloc[0] * (1 + params["cogs_increase"] / 100)
+            # 3. Recalculate Gross Profit correctly
+            stress_df.at[0, "Gross Profit"] = stress_df["Sales Revenue"].iloc[0] - abs(stress_df["Cost of Goods Sold"].iloc[0])
             
-            # Recalculate Gross Profit
-            stress_df.at[0, "Gross Profit"] = stress_df["Sales Revenue"].iloc[0] - stress_df["Cost of Goods Sold"].iloc[0]
+            # 4. Handle operating expenses correctly based on their signs
+            # Check if operating expenses are stored as negative (representing costs) or positive
+            rd_value = df["Research & Development"].iloc[0]
+            marketing_value = df["Marketing"].iloc[0]
+            admin_value = df["Administrative Costs"].iloc[0]
             
-            # Recalculate Operating Income
-            stress_df.at[0, "Operating Income"] = (
-                stress_df["Gross Profit"].iloc[0] - 
-                df["Research & Development"].iloc[0] - 
-                df["Marketing"].iloc[0] - 
-                df["Administrative Costs"].iloc[0]
-            )
+            # Determine whether expenses are stored as positive or negative
+            expenses_are_negative = (rd_value < 0 and marketing_value < 0 and admin_value < 0)
             
-            # Apply interest rate increase
-            # Avoid division by zero
+            # Calculate Operating Income correctly based on expense sign convention
+            if expenses_are_negative:
+                # Expenses are already negative, so add them (same as subtracting their absolute values)
+                stress_df.at[0, "Operating Income"] = (
+                    stress_df["Gross Profit"].iloc[0] + 
+                    rd_value + 
+                    marketing_value + 
+                    admin_value
+                )
+            else:
+                # Expenses are positive, so subtract them
+                stress_df.at[0, "Operating Income"] = (
+                    stress_df["Gross Profit"].iloc[0] - 
+                    abs(rd_value) - 
+                    abs(marketing_value) - 
+                    abs(admin_value)
+                )
+            
+            # 5. Interest rate increase - carefully handle Interest Expense sign
             debt_sum = df["Short-term Debt"].iloc[0] + df["Long-term Debt"].iloc[0]
             if debt_sum > 0:
-                original_rate = abs(df["Interest Expense"].iloc[0]) / debt_sum   # TODO: Interest expense is negative > 
-            else:
-                original_rate = 0
+                # Get original interest rate, accounting for sign
+                interest_expense = df["Interest Expense"].iloc[0]
                 
-            new_rate = original_rate + (params["interest_rate_increase"] / 100)
+                if interest_expense > 0:
+                    # Interest is stored as a positive number
+                    original_rate = interest_expense / debt_sum
+                    new_rate = original_rate * (1 + params["interest_rate_increase"] / 100)
+                    stress_df.at[0, "Interest Expense"] = (stress_df["Short-term Debt"].iloc[0] + stress_df["Long-term Debt"].iloc[0]) * new_rate
+                else:
+                    # Interest is stored as a negative number
+                    original_rate = abs(interest_expense) / debt_sum
+                    new_rate = original_rate * (1 + params["interest_rate_increase"] / 100)
+                    stress_df.at[0, "Interest Expense"] = -(stress_df["Short-term Debt"].iloc[0] + stress_df["Long-term Debt"].iloc[0]) * new_rate
+            else:
+                # No debt, so keep original interest expense
+                stress_df.at[0, "Interest Expense"] = df["Interest Expense"].iloc[0]
             
-            # Apply debt increase
+            # 6. Apply debt increases
             stress_df.at[0, "Short-term Debt"] = df["Short-term Debt"].iloc[0] * (1 + params["debt_increase"] / 100)
             stress_df.at[0, "Long-term Debt"] = df["Long-term Debt"].iloc[0] * (1 + params["debt_increase"] / 100)
             
-            # Recalculate Interest Expense
-            stress_df.at[0, "Interest Expense"] = (
-                stress_df["Short-term Debt"].iloc[0] + stress_df["Long-term Debt"].iloc[0]
-            ) * new_rate
+            # 7. Recalculate Income Before Tax, accounting for interest expense sign
+            if df["Interest Expense"].iloc[0] > 0:
+                # If interest is positive, subtract it
+                stress_df.at[0, "Income Before Tax"] = stress_df["Operating Income"].iloc[0] - stress_df["Interest Expense"].iloc[0]
+            else:
+                # If interest is negative, add it (equivalent to subtracting a negative)
+                stress_df.at[0, "Income Before Tax"] = stress_df["Operating Income"].iloc[0] + abs(stress_df["Interest Expense"].iloc[0])
             
-            # Recalculate Income Before Tax
-            stress_df.at[0, "Income Before Tax"] = stress_df["Operating Income"].iloc[0] - stress_df["Interest Expense"].iloc[0]
-            
-            # Recalculate Tax Expense (assuming same tax rate)
-            # Avoid division by zero
+            # 8. Recalculate Tax Expense
             if df["Income Before Tax"].iloc[0] > 0:
                 tax_rate = df["Tax Expense_20"].iloc[0] / df["Income Before Tax"].iloc[0]
             else:
-                tax_rate = 0.2  # Default tax rate if income before tax is zero or negative
+                tax_rate = 0.2  # Default tax rate
                 
-            stress_df.at[0, "Tax Expense_20"] = max(0, stress_df["Income Before Tax"].iloc[0] * tax_rate)
+            tax_amount = stress_df["Income Before Tax"].iloc[0] * tax_rate
+            stress_df.at[0, "Tax Expense_20"] = max(0, tax_amount)  # Taxes can't be negative
             
-            # Recalculate Net Income
-            stress_df.at[0, "Net Income"] = stress_df["Income Before Tax"].iloc[0] - stress_df["Tax Expense_20"].iloc[0]
+            # 9. Recalculate Net Income
+            # stress_df.at[0, "Net Income"] = stress_df["Income Before Tax"].iloc[0] - stress_df["Tax Expense_20"].iloc[0]
             
-            # Apply AR decline
+            # 10. Apply AR and cash declines
             stress_df.at[0, "Accounts Receivable"] = df["Accounts Receivable"].iloc[0] * (1 - params["ar_decline"] / 100)
-            
-            # Apply cash decline
             stress_df.at[0, "Cash"] = df["Cash"].iloc[0] * (1 - params["cash_decline"] / 100)
             
-            # Calculate new metrics based on stressed financials
-            stress_metrics = calculate_financial_metrics(stress_df)
+            # 11. Calculate new metrics from stressed statement
+            stress_metrics = calculate_financial_metrics(stress_df) # 2
             
             return stress_df, stress_metrics
         
@@ -1331,17 +1400,15 @@ if uploaded_file is not None:
         
         try:
             stress_df, stress_metrics = calculate_stress_test(df, metrics_df, stress_params)
-            print("Stress DF")
-            print(stress_df.to_json())
+            # print("Stress DF") # print(stress_df.to_json())
 
-            print("Metrics DF")
-            print(metrics_df.to_json())
-            print(f"Original: Net Income={df['Net Income'].iloc[0]}, Total Assets={metrics_df['Total Assets'].iloc[0]}")
+            # print("Metrics DF") # print(metrics_df.to_json())
+            # print(f"Original: Net Income={df['Net Income'].iloc[0]}, Total Assets={metrics_df['Total Assets'].iloc[0]}")
 
 
-            print("Stress Metrices")
-            print(stress_metrics.to_json())
-            print(f"Stressed: Net Income={stress_df['Net Income'].iloc[0]}, Total Assets={stress_metrics['Total Assets'].iloc[0]}")
+            # print("Stress Metrices")
+            # # print(stress_metrics.to_json())
+            # print(f"Stressed: Net Income={stress_df['Net Income'].iloc[0]}, Total Assets={stress_metrics['Total Assets'].iloc[0]}")
             
             # unusual relationship between Net Income and Total Assets
             # Net Income is a function of Total Assets, but the relationship is not direct.
@@ -1351,6 +1418,17 @@ if uploaded_file is not None:
             
             with result_col1:
                 st.write("### Key Metrics After Stress Test")
+                
+                # raw_data = {
+                #     "ROA": {
+                #         "original": metrics_df['ROA'].iloc[0],
+                #         "stressed": stress_metrics['ROA'].iloc[0]
+                #     },
+                #     "Net Profit Margin": {
+                #         "original": metrics_df['Net Profit Margin'].iloc[0],
+                #         "stressed": stress_metrics['Net Profit Margin'].iloc[0]
+                #     }
+                # }
                 
                 # Create comparison table
                 comparison_data = {
@@ -1384,6 +1462,7 @@ if uploaded_file is not None:
                 }
                 
                 print(f"Comparison Data: {comparison_data}")
+
                 # Calculate percent change safely (avoiding division by zero)
                 change_values = []
                 for i, metric in enumerate(comparison_data["Metric"]):
@@ -1417,6 +1496,7 @@ if uploaded_file is not None:
                 comparison_data["Change"] = change_values
                 comparison_df = pd.DataFrame(comparison_data)
                 
+                print("Comparison DataFrame:")
                 print(comparison_df.to_json())
 
                 # Display the dataframe
