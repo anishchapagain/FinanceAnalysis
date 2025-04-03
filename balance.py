@@ -172,7 +172,7 @@ def calculate_financial_metrics(df):
         metrics["Current Ratio"] = metrics["Total Current Assets"] / metrics["Total Current Liabilities"] # 1.5:1 (Good) is good : Green, 1:1 (Moderate) is ok : Amber, < 1:1 (Weak) is bad : Red
         
         # Quick Ratio (Cash + Accounts Receivable) / Current Liabilities
-        # 7 : current asset - stock
+        # 7 : current asset - stock # inventory
         # Above 1.0 is good : Green, below:1 > Red                                      # 0.7 to 1.0 is ok : Amber, < 0.7 is bad : Red
         metrics["Quick Ratio"] = (data["Cash"] + data["Accounts Receivable"]) / metrics["Total Current Liabilities"]  # Current Asset - Inventory|stock|work in progress
         
@@ -358,9 +358,142 @@ if uploaded_file is not None:
     with st.expander("Raw Financial Data", expanded=False):
         st.dataframe(df)
         st.markdown(get_table_download_link(df, "financial_data", "Download CSV"), unsafe_allow_html=True)
-        
+    
     # Calculate all metrics
     metrics_df = calculate_financial_metrics(df) # 1
+    
+    # Display metrics
+    ratios = {}
+
+    ebitda = metrics_df["EBITDA"].iloc[0]
+    icr = format_ratio("Interest Coverage Ratio", metrics_df["Interest Coverage Ratio"].iloc[0])
+    dscr = format_ratio("DSCR", metrics_df["DSCR"].iloc[0])
+    gear_ratio = format_ratio("Gear Ratio", metrics_df["Gear Ratio"].iloc[0])
+    leverage_ratio = format_ratio("Leverage Ratio", metrics_df["Leverage Ratio"].iloc[0])
+    current_ratio = format_ratio("Current Ratio", metrics_df["Current Ratio"].iloc[0])
+    quick_ratio = format_ratio("Quick Ratio", metrics_df["Quick Ratio"].iloc[0])
+    liquidity_ratio = format_ratio("Liquidity Ratio", metrics_df["Liquidity Ratio"].iloc[0])
+    debt_equity_ratio = format_ratio("DE Ratio", metrics_df["DE Ratio"].iloc[0])
+
+    success = 0
+    # total asset == total liability
+
+    if ebitda < 0:
+        st.error("EBITDA is negative, indicating potential financial distress.")
+    elif ebitda == 0:
+        st.warning("EBITDA is zero, indicating no operational profit.")
+    elif ebitda > 0:
+        st.success(f"**EBITDA {ebitda} is positive**, indicating healthy operational performance.")
+        success += 1
+    else:
+        st.info("EBITDA is not available.")
+
+    if ebitda > 0:
+        if "weak" in icr.lower():
+            st.error(f"Interest Coverage Ratio  {icr}, indicating potential difficulty in meeting interest payments.")
+        elif "adequate" in icr.lower():
+            st.warning(f"Interest Coverage Ratio {icr}, indicating potential risk.")
+        elif "strong" in icr.lower():
+            st.success(f"**Interest Coverage Ratio: {icr}**, indicating good ability to meet interest payments.")
+            success += 1
+        else:
+            st.error("Interest Coverage Ratio is not available.")
+
+
+        if "weak" in dscr.lower():
+            st.error(f"Debt Service Coverage Ratio {dscr}, indicating potential difficulty in meeting debt obligations.")   
+        elif "adequate" in dscr.lower():
+            st.warning(f"Debt Service Coverage Ratio {dscr}, indicating potential risk.")
+        elif "strong" in dscr.lower():
+            st.success(f"**Debt Service Coverage Ratio: {dscr}**, indicating good ability to meet debt obligations.")
+            success += 1
+        else:
+            st.error("Debt Service Coverage Ratio is not available.")
+
+        
+        if "weak" in gear_ratio.lower():
+            st.error(f"Gear Ratio {gear_ratio}, indicating high leverage.")
+        elif "moderate" in gear_ratio.lower():
+            st.warning(f"Gear Ratio {gear_ratio}, indicating moderate leverage.")
+        elif "good" in gear_ratio.lower():
+            st.success(f"**Gear Ratio: {gear_ratio}**, indicating good leverage.")
+            success += 1
+        else:
+            st.error(f"Gear Ratio is not available. {gear_ratio}")
+
+
+        if "weak" in leverage_ratio.lower():
+            st.error(f"Leverage Ratio {leverage_ratio}, indicating high leverage.")
+        elif "moderate" in leverage_ratio.lower():
+            st.warning(f"Leverage Ratio {leverage_ratio}, indicating moderate leverage.")
+        elif "good" in leverage_ratio.lower():
+            st.success(f"**Leverage Ratio: {leverage_ratio}**, indicating good leverage.")
+            success += 1
+        else:
+            st.error(f"Leverage Ratio is not available. {leverage_ratio}")
+
+
+        if "weak" in current_ratio.lower():
+            st.error(f"Current Ratio {current_ratio}, indicating potential liquidity issues.")
+        elif "adequate" in current_ratio.lower():
+            st.warning(f"Current Ratio {current_ratio}, indicating potential risk.")
+        elif "strong" in current_ratio.lower():
+            st.success(f"**Current Ratio: {current_ratio}**, indicating good liquidity.")
+            success += 1
+        else:
+            st.error("Current Ratio is not available.")
+
+        
+        if "weak" in quick_ratio.lower():
+            st.error(f"Quick Ratio {quick_ratio}, indicating potential liquidity issues.")
+        elif "adequate" in quick_ratio.lower():
+            st.warning(f"Quick Ratio {quick_ratio}, indicating potential risk.")
+        elif "strong" in quick_ratio.lower():
+            st.success(f"**Quick Ratio: {quick_ratio}**, indicating good liquidity.")
+            success += 1
+        else:
+            st.error("Quick Ratio is not available.")
+        
+
+    if success > 3:
+        st.write("**Overall Financial Health: Good**")
+    elif success == 3:
+        st.write("**Overall Financial Health: Moderate**")    
+    elif success < 3:
+        st.write("**Overall Financial Health: Weak**")
+    st.divider()
+    if "weak" in liquidity_ratio.lower():
+        st.error(f"Liquidity Ratio {liquidity_ratio}, indicating potential liquidity issues.")
+    elif "adequate" in liquidity_ratio.lower():
+        st.warning(f"Liquidity Ratio {liquidity_ratio}, indicating potential risk.")
+    elif "strong" in liquidity_ratio.lower():
+        st.success(f"**Liquidity Ratio: {liquidity_ratio}**, indicating good liquidity.")
+    else:
+        st.error("Liquidity Ratio is not available.")
+
+    
+    if "weak" in debt_equity_ratio.lower():
+        st.error(f"Debt to Equity Ratio {debt_equity_ratio}, indicating high leverage.")
+    elif "moderate" in debt_equity_ratio.lower():
+        st.warning(f"Debt to Equity Ratio {debt_equity_ratio}, indicating moderate leverage.")
+    elif "good" in debt_equity_ratio.lower():
+        st.success(f"**Debt to Equity Ratio: {debt_equity_ratio}**, indicating good leverage.")
+    else:
+        st.error("Debt to Equity Ratio is not available.")
+
+
+    # st.write("**EBITDA**:", f"${metrics_df['EBITDA'].iloc[0]:,.0f}")
+    # st.write(f"**Interest Coverage Ratio**: {format_ratio('Interest Coverage Ratio', metrics_df['Interest Coverage Ratio'].iloc[0])}")
+    # st.write(f"**DSCR**: {format_ratio('DSCR', metrics_df['DSCR'].iloc[0])}")
+    # st.write(f"**Gear Ratio**: {format_ratio('Gear Ratio', metrics_df['Gear Ratio'].iloc[0])}")
+    # st.write(f"**Leverage Ratio**: {format_ratio('Leverage Ratio', metrics_df['Leverage Ratio'].iloc[0])}")
+    # st.write(f"**Current Ratio**: {format_ratio('Current Ratio', metrics_df['Current Ratio'].iloc[0])}")
+    # st.write(f"**Quick Ratio**: {format_ratio('Quick Ratio', metrics_df['Quick Ratio'].iloc[0])}")
+    # st.divider()
+    # st.write(f"**D/E Ratio**: {format_ratio('DE Ratio', metrics_df['DE Ratio'].iloc[0])}")
+    # st.write(f"**Liquidity Ratio**: {format_ratio('Liquidity Ratio', metrics_df['Liquidity Ratio'].iloc[0])}")
+
+    
     
     # Create columns for the dashboard
     col1, col2 = st.columns(2)
