@@ -21,6 +21,10 @@ NO_MATCHING_RECORDS = "No matching records found for your query."
 
 MATERIAL_ARROW_DOWN = ":material/arrow_drop_down:"
 
+# MODEL = "codellama:13b-code"
+MODEL = "codellama:7b"
+# MODEL = "qwen2.5-coder:7b"
+
 # Set page configuration
 st.set_page_config(
     page_title="Chatbot - Customer Transactions",
