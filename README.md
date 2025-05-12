@@ -17,14 +17,12 @@ A powerful Python-based application for analyzing financial and business data th
    - Python 3.8 or higher
    - pip package manager
 
-2. **OpenAI API Key**
-
-   - Required for default GPT-4 model
-   - Get it from [OpenAI Platform](https://platform.openai.com)
-
-3. **Ollama (Optional)**
+2. **Ollama (Optional)**
    - Required for local Llama3.2 model
    - Follow installation steps below
+  
+3. **HuggingFace (QWEN)**
+   - mpath = "models\qwen*.gguf"
 
 ## Installation
 **Install dependencies**
