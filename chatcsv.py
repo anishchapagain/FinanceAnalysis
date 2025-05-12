@@ -16,6 +16,7 @@ NO_MATCHING_RECORDS = "No matching records found for your query."
 
 MATERIAL_ARROW_DOWN = ":material/arrow_drop_down:"
 
+
 # MODEL = "codellama:13b-code"
 # MODEL = "codellama:7b"
 MODEL = "qwen2.5-coder:7b"
@@ -42,32 +43,10 @@ if "column_descriptions" not in st.session_state:
 def load_data(file_path=None):
     try:
         if file_path is None:
-            # In production, you would replace this with your actual file path
-            df = pd.read_csv('./data/partial_data_2500.csv')
+            st.error("No file path provided.")
+            return pd.DataFrame()
         else:
             df = pd.read_csv(file_path)
-        
-        # Convert date columns to datetime format
-        # date_columns = ['account_open_date', 'last_debit_date', 'last_credit_date', 'date_of_birth']
-        # for col in date_columns:
-        #     if col in df.columns:
-        #         try:
-        #             df[col] = pd.to_datetime(df[col], errors='coerce', format='%d-%b-%y')
-        #         except:
-        #             try:
-        #                 # Try another format if the first one fails
-        #                 df[col] = pd.to_datetime(df[col], errors='coerce')
-        #             except:
-        #                 pass
-        
-        # # Convert boolean columns
-        # bool_columns = ['mobile_banking', 'internet_banking', 'account_inactive']
-        # for col in bool_columns:
-        #     if col in df.columns:
-        #         # Convert Yes/No to boolean if needed
-        #         if df[col].dtype == 'object':
-        #             df[col] = df[col].map({'Yes': True, 'No': False})
-        
         return df
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
@@ -195,10 +174,13 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     
     if column_descriptions == "":
         column_descriptions = get_column_descriptions(df_info)
-    logger.info("Description Columns")
+        logger.info(f"Description Columns {len(column_descriptions)}")
 
     # Get dataframe schema
     columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
+    columns_info = f"Here are the columns and their data types:\n{json.dumps(columns_info, indent=2)}\n"
+    column_descriptions = f"Here are the descriptions of the columns:\n{column_descriptions}\n"
+    sample_data = f"Sample data:\n{df_info.sample(5).to_markdown()}\n"
     
     # Create the system prompt
     system_prompt = f"""
@@ -210,31 +192,26 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     
     When generating code for data visualization tasks:
     1. ALWAYS use Plotly (import plotly.express as px, import plotly.graph_objects as go) for all visualizations
-    2. DO NOT use matplotlib, seaborn, or pandas plotting functionality
     3. DO NOT include fig.show() commands
-    4. ENSURE all plots have proper labels, titles, and legends.
+    4. ENSURE all plots have proper coloring, labels, titles, and legends.
     5. Optimize for readability and interactivity
     
     When identifying rows with maximum/minimum values:
-    1. Always return results as a DataFrame, not as a Series
-    2. Use methods that preserve DataFrame structure (e.g., .loc with double brackets or .iloc[[index]])
-    3. For single row selections, ensure they remain as DataFrames by using .to_frame().T when necessary, or by selecting with double brackets
+    1. Use methods that preserve DataFrame structure (e.g., .loc with double brackets or .iloc[[index]])
+    2. For single row selections, ensure they remain as DataFrames by using .to_frame().T when necessary, or by selecting with double brackets
     
     When working with dates:
     1. Always CONVERT string date columns to datetime using pd.to_datetime() before any filtering
     2. Use .dt accessor to extract components (year, month, day) from datetime columns
     3. Include proper date conversion code in all queries involving date comparisons
 
-    - Here are the columns and their data types:
-    {json.dumps(columns_info, indent=2)}
-    
-    - Here are descriptions of the columns:
+    {columns_info}
     {column_descriptions}
+    {sample_data}
     
-    - Here is the sample data:
-    {df_info.sample(7).to_markdown()}
-
-    - Use proper pandas syntax and functions.
+    IMPORTANT:
+    - Always return results as a DataFrame, with appropriate columns.
+    - If the query asks for a specific value (e.g., average, sum, min, max), return it as a single value.
     - If the query asks for a chart or visualization (show, plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
     - If the query asks for statistics or aggregations, CALCULATE them and assign to result.
     - If you're unsure about how to translate the query, create a simple filter that might be helpful.
@@ -259,8 +236,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         response = requests.post(url, json=payload)
         logger.info("Waiting for response..")
         
-        if response.status_code == 200:
-            # Extract the generated code from the response
+        if response.status_code == 200:  # Extract the generated code from the response
             response_data = response.json()
             generated_code = response_data.get('response', '')
             
@@ -295,7 +271,7 @@ def execute_pandas_query(query_code, df):
         
         # Get the result
         result = local_vars.get('result', None)
-        
+        logger.info(f"cODE Result: {result} - Type: {type(result)}")
 
         # Check if result exists or is NaN/None
         if result is None:
@@ -644,6 +620,22 @@ def df_to_image(df, filename="dataframe.png"):
     fig.savefig(filename, dpi=300, bbox_inches='tight')
 
 
+def get_history_df():
+    # Add general context about the last result
+    result_context = ""
+    if st.session_state.last_dataframe_result is not None:
+        df_result = st.session_state.last_dataframe_result
+        result_context = (
+            f"Previous query result summary:\n"
+            f"- Shape: {df_result.shape[0]} rows × {df_result.shape[1]} columns\n"
+            f"- Columns: {', '.join(df_result.columns)}\n"
+        )
+        # Add first few rows if the result is small
+        if len(df_result) <= 10:
+            result_context += f"\nPrevious result data:\n{df_result.to_string()}\n\n"
+        else:
+            result_context += f"\nSample of previous result (first 5 rows):\n{df_result.head().to_string()}\n\n"
+
 # Main app
 def main():
     st.title("Chat FinanceLLM - Account Transactions")
@@ -797,6 +789,7 @@ def main():
                     
                     # Execute the query
                     result, error, result_type = execute_pandas_query(pandas_query, df)
+                    logger.info(f"Result: {result} - Type: {type(result)}")
                     if result_type == "plotly_figure":
                         logger.info(f"Plotly Figure Result: {result['data'][0]['name']} - {result['data'][0]['type']} -- ERROR:{error} -- TYPE:{result_type}")
                     else:
@@ -812,8 +805,9 @@ def main():
                         # else:
                         #     st.code(pandas_query, language="python")
                     
+                    
                     if error:
-                        logger.error(f"Error: {error}")
+                        logger.error(f"MAIN Error: {error}")
 
                         expected_texts = ["Which", "What", "How", "List", "Visualize", "Create","Calculate", "Identify", "Generate", "Display", "Find", "Show"]
                         if not any(elem in pandas_query for elem in expected_texts):
@@ -911,39 +905,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Issues
-# I am an AI language model designed to understand and convert natural language queries into pandas Python code. My purpose is to assist data analysts and other users who work with pandas DataFrames by providing quick, accurate, and efficient solutions to their data-related tasks. How can I help you today?
-# Answer with Axes(0.125,0.11;0.775x0.77), if has show()
-# Result other than 'result' manage!
-# Sometime default value is also used, need to show them in answer or tips
-# Conversation saver
-# #1. What are the top 5 most active customers based on the number of transactions (debits and credits)?
-
-# 2. How has the average account balance changed over time, categorized by customer industry?
-
-# 3. Which bank branch has the highest total account balance and what is that balance?
-
-# 4. How many customers have mobile banking enabled and what are their average account balances?
-
-# 5. What is the most common nationality among customers with a current account?
-
-# 6. Generate a chart showing the distribution of account types across different economic sectors.
-
-# 7. Calculate the total credit and debit amounts for each customer and find out who has made the largest transactions.
-
-# 8. How many customers have not completed KYC (Know Your Customer) process yet?
-
-# 9. What is the average number of days between the last debit and the last credit for each account type?
-
-# 10. List all customers who have both mobile banking and internet banking enabled, along with their customer IDs and names.
-# 1. Plot the distribution of account balances across different customer industries.
-# 2. Create a bar chart showing the number of active accounts per bank branch.
-# 3. Generate a line graph to show the trend of average local currency balance over time for each account category.
-# 4. Display a pie chart illustrating the proportion of customers who have mobile banking enabled versus those who do not.
-# 5. Plot a histogram of ages (calculated from date_of_birth) and categorize them into bins based on customer_industry.
-# 6. Create a scatter plot showing the relationship between last_debit_date and last_credit_date for each customer_id.
-# 7. Generate a box plot to compare the account_balance distribution across different residency_status categories.
-# 8. Plot a stacked bar chart showing the number of active accounts per bank_branch by customer_industry.
-# 9. Create a line graph to show the trend of average balance in local currency over time, split by mobile_banking status.
-# 10. Generate a scatter plot showing the correlation between account_balance and date_of_birth for each nationality.
