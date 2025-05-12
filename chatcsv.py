@@ -134,6 +134,8 @@ def get_column_descriptions(df):
         "stream": False
     }
     
+    logger.info(f"Column Description Payload: {payload}")
+
     try:
         # Send the request to LLM
         response = requests.post(url, json=payload)
@@ -231,6 +233,8 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         "stream": False
     }
     
+    logger.info(f"System Payload: {payload}")
+
     try:
         # Send the request to LLM
         response = requests.post(url, json=payload)
