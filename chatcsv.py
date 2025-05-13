@@ -61,7 +61,7 @@ def setup_logger(log_dir="logs"):
     os.makedirs(log_dir, exist_ok=True)
     
     # Create a unique log filename with timestamp
-    current_time = datetime.now().strftime("%Y%m%d-%H")
+    current_time = datetime.now().strftime("%Y%m%d")
     log_filename = os.path.join(log_dir, f"streamlit_app_{current_time}.log")
     
     # Configure the root logger
@@ -93,21 +93,32 @@ def setup_logger(log_dir="logs"):
 
 logger = setup_logger()
 
+def get_column_info(df):
+    column_info = []
+    for col in df.columns:
+        dtype = str(df[col].dtype)
+        sample_values = df[col].dropna().sample(min(5, df[col].count())).tolist()
+        sample_str = str(sample_values)[:100] + "..." if len(str(sample_values)) > 100 else str(sample_values)
+        column_info.append(f"- `{col}` ({dtype}): Example values: {sample_str}")
+
+    column_info_str = "\n".join(column_info)
+    return column_info_str
+
 # Function to get column descriptions from LLM
 def get_column_descriptions(df):
     # Define the URL for the LLM API
     url = "http://localhost:11434/api/generate"
     logger.info("Column Description Started")
-    # Get basic column info
-    column_info = []
-    for col in df.columns:
-        dtype = str(df[col].dtype)
-        sample_values = df[col].dropna().sample(min(3, df[col].count())).tolist()
-        sample_str = str(sample_values)[:100] + "..." if len(str(sample_values)) > 100 else str(sample_values)
-        column_info.append(f"- {col}: {dtype}, example values: {sample_str}")
     
-    column_info_str = "\n".join(column_info)
-    logger.info("1 Column Description prompt start")
+    # Get basic column info
+    column_info = get_column_info(df)
+    # column_info = []
+    # for col in df.columns:
+    #     dtype = str(df[col].dtype)
+    #     sample_values = df[col].dropna().sample(min(3, df[col].count())).tolist()
+    #     sample_str = str(sample_values)[:100] + "..." if len(str(sample_values)) > 100 else str(sample_values)
+    #     column_info.append(f"- {col}: {dtype}, example values: {sample_str}")
+    
     # Create the system prompt for column descriptions
     system_prompt_column = f"""
     You are a data analyst assistant that helps describe dataset columns.
@@ -117,13 +128,13 @@ def get_column_descriptions(df):
     - column_name: Brief description of what this column represents
     
     For example:
-    - "Account Balance": The current balance in the account.
-    - "Internet Banking": Indicates if the customer uses internet banking.
+    - account balance: The current balance in the account.
+    - internet banking: Indicates if the customer uses internet banking.
     
     Columns information:
-    {column_info_str}
+    {column_info}
     
-    Provide ONLY the descriptions, one per line, starting with the column name in titled case without underscore followed by colon.
+    Provide ONLY the descriptions, one per line, starting with the column name in lower case without underscore followed by colon.
     """
     
     # Create the request payload
@@ -134,18 +145,18 @@ def get_column_descriptions(df):
         "stream": False
     }
     
-    logger.info(f"Column Description Payload: {payload}")
+    logger.info(f"Column Description Payload:\n{system_prompt_column}")
 
     try:
         # Send the request to LLM
         response = requests.post(url, json=payload)
-        logger.info("2 Column Description Prompt Response")
+        logger.info("Column Description Prompt Response")
         
         if response.status_code == 200:
             # Extract & Clean the generated descriptions
             response_data = response.json()
             column_descriptions = response_data.get('response', '').strip()
-            logger.info("3 Column Description Generated")
+            logger.info("Column Description Generated")
             return column_descriptions
         else:
             return "Error getting column descriptions. Using default descriptions."
@@ -157,10 +168,15 @@ def clean_query(generated_code):
     # Remove extra spaces and newlines, show() and other common functions
     if generated_code is None:
         return ""
+    
     if "result.show()" in generated_code:
         logger.info("clean_query - result.show() found")
         generated_code = generated_code.replace("result.show()", "")
-    
+
+    if "import plotly.express as px" in generated_code:
+        logger.info("clean_query - import plotly.express as px found")
+        generated_code = generated_code.replace("import plotly.express as px", "")
+
     generated_code = generated_code.strip()
     
     # Remove any trailing punctuation
@@ -170,23 +186,33 @@ def clean_query(generated_code):
 
 # Function to get pandas query from LLM
 def get_pandas_query(prompt, df_info, column_descriptions):
-    logger.info(f"Prompt: {prompt}")
+    logger.info(f"User Prompt: {prompt}")
     # Define the URL for the LLM API
     url = "http://localhost:11434/api/generate"
     
     if column_descriptions == "":
         column_descriptions = get_column_descriptions(df_info)
         logger.info(f"Description Columns {len(column_descriptions)}")
+    
+    columns_info = get_column_info(df_info)
 
     # Get dataframe schema
-    columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
-    columns_info = f"Here are the columns and their data types:\n{json.dumps(columns_info, indent=2)}\n"
-    column_descriptions = f"Here are the descriptions of the columns:\n{column_descriptions}\n"
-    sample_data = f"Sample data:\n{df_info.sample(5).to_markdown()}\n"
+    # columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
+    # columns_info = f"Columns and their data types:\n{json.dumps(columns_info, indent=2)}\n"
+
+    columns_info = f"Columns and their data types with examples:\n{columns_info}\n"
+    column_descriptions = f"Descriptions of the columns:\n{column_descriptions}\n"
+    sample_data = f"Few Sample data:\n{df_info.sample(5).to_markdown(index=False)}\n"
     
+    # TODO:
+    # Check system prompt
+
     # Create the system prompt
     system_prompt = f"""
-    You are a data analyst assistant that converts natural language queries to pandas Python code.
+    You are an expert in data analysis using python programming and pandas.
+    You can CONVERT natural language queries or prompts based on provided context to python code using pandas.
+
+    IMPORTANT:
     - ONLY respond with valid Python code for pandas.
     - DO NOT include any explanation or markdown formatting.
     - The code should start with 'result = ' and return a pandas DataFrame or a calculated value.
@@ -194,9 +220,9 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     
     When generating code for data visualization tasks:
     1. ALWAYS use Plotly (import plotly.express as px, import plotly.graph_objects as go) for all visualizations
-    3. DO NOT include fig.show() commands
-    4. ENSURE all plots have proper coloring, labels, titles, and legends.
-    5. Optimize for readability and interactivity
+    2. DO NOT include fig.show() commands
+    3. ENSURE all plots have proper coloring, labels, titles, and legends.
+    4. Optimize for readability and interactivity
     
     When identifying rows with maximum/minimum values:
     1. Use methods that preserve DataFrame structure (e.g., .loc with double brackets or .iloc[[index]])
@@ -211,29 +237,30 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     {column_descriptions}
     {sample_data}
     
-    IMPORTANT:
-    - Always return results as a DataFrame, with appropriate columns.
-    - If the query asks for a specific value (e.g., average, sum, min, max), return it as a single value.
-    - If the query asks for a chart or visualization (show, plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
-    - If the query asks for statistics or aggregations, CALCULATE them and assign to result.
+    FINAL INSTRUCTIONS:
+    - TRY to return results as a DataFrame, with appropriate columns.
+    - If the query is for a specific value (e.g., average, sum, min, max), return it as a single value.
+    - If the query is for a chart or visualization (show, plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
+    - If the query is for statistics or aggregations, CALCULATE them and assign to result.
     - If you're unsure about how to translate the query, create a simple filter that might be helpful.
     - Include adequate related columns in the final result.
     - DO NOT include any print statements or comments in the code.
     - DO NOT include code imports or library references in the code.
-    - IF Applicable, TRY to match some partial strings in the prompt to the values in the dataframe.
     - Assume case sensitivity during query formation.
+    - If the query is regarding prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
+    - Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.
     """
 
 
     # Create the request payload
     payload = {
         "model": MODEL,  # or any other model you have
-        "prompt": f"{prompt}",
-        "system": system_prompt,
+        "prompt": f"{prompt.strip()}",
+        "system": system_prompt.strip(),
         "stream": False
     }
     
-    logger.info(f"System Payload: {payload}")
+    logger.info(f"System Prompt:\n {system_prompt}")
 
     try:
         # Send the request to LLM
@@ -252,8 +279,6 @@ def get_pandas_query(prompt, df_info, column_descriptions):
             
             generated_code = clean_query(generated_code)
 
-            #print(generated_code)
-            logger.info("Generated Code...")
             return generated_code
         else:
             return f"Error: {response.status_code} - {response.text}"
@@ -269,13 +294,20 @@ def execute_pandas_query(query_code, df):
         global_vars = {'px': px, 'pd': pd, 'np': np, 're': re}
         
         # Execute the code in the local scope
-        logger.info("1. Before exec ..............")
-        exec(query_code, global_vars, local_vars)
-        logger.info("2. After exec ..............")
+        logger.info("Before exec ..............")
+        if query_code.startswith("Example Prompts:"):
+            # If the query is for prompts, return the generated code as is
+            result = query_code
+            result_type = "text"
+
+        if query_code.startswith("result = "):
+            exec(query_code, global_vars, local_vars)
+
+            # Get the result
+            result = local_vars.get('result', None)
+            logger.info(f"Local vars: {local_vars}")
         
-        # Get the result
-        result = local_vars.get('result', None)
-        logger.info(f"cODE Result: {result} - Type: {type(result)}")
+        logger.info(f"After exec ...type:{type(result)}")
 
         # Check if result exists or is NaN/None
         if result is None:
@@ -297,13 +329,15 @@ def execute_pandas_query(query_code, df):
             result_type = "plotly_figure"
         elif isinstance(result, (float, int)):
             result_type = "numeric"
+        elif result_type == "text":
+            result_type = "text"
         else:
             result_type = "other"
 
         # if type=other and result has Axes() then it is a plot retry the query
         return result, None, result_type
     except Exception as e:
-        logger.warning(f"execute_pandas_query - Exception {str(e)}")
+        logger.warning(f"Exception {str(e)}")
         return None, ERROR_MESSAGE, None
 
 # Function to generate summary statistics
@@ -718,7 +752,7 @@ def main():
             # st.dataframe(df.head(1), use_container_width=True)
             
         with st.expander("**Sample Prompts**", expanded=False, icon=MATERIAL_ARROW_DOWN):
-            st.info('''Enter your questions in natural language to analyze the banking data..''')
+            st.info('''Enter questions in natural language to analyze the data uploaded..''')
             st.code("""            
             Example queries:
             - provide me some prompts to analyze current dataset using sector
@@ -766,9 +800,10 @@ def main():
                         st.plotly_chart(message["data"])
                     if message["type"] == "numeric":
                         st.info(f"Result: {message['data']}")
+                    # if message["type"] == "text":
                     
         # Input for the query
-        if query := st.chat_input("Ask something about the data...LLM will generate the output based on the query. Try to be specific."):
+        if query := st.chat_input("Ask something about the data...LLM will generate the output based on your prompts. Try to be specific as required."):
             # Check if LLM is connected
             if not llm_connected:
                 st.error("Cannot process query because LocalLLM is not connected.")
@@ -782,22 +817,21 @@ def main():
                 st.markdown(query)
 
             with st.chat_message("assistant"):
+
                 with st.spinner("Processing your query..."):
                     # Get the pandas query from LLM
                     pandas_query = get_pandas_query(query, df, st.session_state.column_descriptions)
-                    logger.info(f"Pandas Query: {pandas_query}")
-
+                    logger.info(f"Generated Pandas Query:\n{pandas_query}\n------------")
                     # # Display the generated code
                     # with st.expander("View Generated Code", icon=MATERIAL_ARROW_DOWN):
                     #     st.code(pandas_query, language="python")
                     
                     # Execute the query
                     result, error, result_type = execute_pandas_query(pandas_query, df)
-                    logger.info(f"Result: {result} - Type: {type(result)}")
                     if result_type == "plotly_figure":
-                        logger.info(f"Plotly Figure Result: {result['data'][0]['name']} - {result['data'][0]['type']} -- ERROR:{error} -- TYPE:{result_type}")
+                        logger.info(f"mainFIGURE {result_type} -- {result['data'][0]['name']} - {result['data'][0]['type']} -- {error}")
                     else:
-                        logger.info(f"Query Result: {result} -- ERROR:{error} -- TYPE:{result_type}")
+                        logger.info(f"mainRESULTS : {type(result)} - {error}\n {result}")
                     
                     # Do not display "View Generated Code"
                     # Display the generated code
@@ -834,8 +868,12 @@ def main():
                             response_content = NO_MATCHING_RECORDS
 
                         elif result_type == "dataframe":
-                            st.success(f"Found {len(result)} matching records")
-                            st.dataframe(result, use_container_width=True)
+                            total_results = len(result)
+                            response_content = f"Found {total_results} matching records"
+                            st.success(response_content)
+
+                            st.dataframe(result, use_container_width=True, hide_index=True)
+
                             csv = result.to_csv(index=False)
                             st.download_button(
                                 label="Download results as CSV",
@@ -843,32 +881,23 @@ def main():
                                 file_name="query_results.csv",
                                 mime="text/csv"
                             )
-
-                            # # Show Image & Download Button
-                            # image_result = df_to_image(result)
-                            # st.download_button(
-                            #     label="Download results as Image",
-                            #     data=image_result,
-                            #     file_name="query_results.png",
-                            #     mime="image/png"
-                            # )
-
-                            response_content = f"Found {len(result)} matching records"
-                            # Store the result for message history
+                            # Store the result for message history 'role': 'assistant'
                             st.session_state.messages.append({
                                 "role": "assistant", 
                                 "type": "dataframe", 
                                 "content": response_content,
+                                'query': pandas_query,
                                 "data": result
                             })
 
                         elif result_type == "plotly_figure":
                             st.plotly_chart(result)
-                            response_content = "Here's the visualization you requested"
+                            response_content = "Here's the visualization taht you have requested"
                             st.session_state.messages.append({
                                 "role": "assistant", 
                                 "type": "plotly_figure", 
                                 "content": response_content,
+                                'query': pandas_query,
                                 "data": result
                             })
 
@@ -888,16 +917,26 @@ def main():
                                 "data": result
                             })
                         elif result_type == "other":
-                            if 'result = df' in pandas_query:
-                                st.dataframe(result)
-                                response_content = f"Found {len(result)} matching records"
-                                # Store the result for message history
-                                st.session_state.messages.append({
-                                    "role": "assistant", 
-                                    "type": "dataframe", 
-                                    "content": response_content,
-                                    "data": result
-                                })
+                            if len(result) > 0:
+                                if 'result = df' in pandas_query:
+                                    st.dataframe(result)
+                                    response_content = f"Found {len(result)} matching records"
+                                    # Store the result for message history
+                                    st.session_state.messages.append({
+                                        "role": "assistant", 
+                                        "type": "dataframe", 
+                                        "content": response_content,
+                                        "data": result
+                                    })
+                        elif result_type == "text":
+                            # If the result is a text prompt, display it
+                            st.info(result)
+                            response_content = str(result)
+                            st.session_state.messages.append({
+                                "role": "assistant", 
+                                "type": "text", 
+                                "content": response_content
+                            })
                         else:
                             st.write(result)
                             response_content = str(result)
