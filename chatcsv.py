@@ -16,6 +16,8 @@ NO_MATCHING_RECORDS = "No matching records found for your query."
 
 MATERIAL_ARROW_DOWN = ":material/arrow_drop_down:"
 
+CURRENT_DATE = datetime.now().strftime("%Y-%m-%d")
+
 
 # MODEL = "codellama:13b-code"
 # MODEL = "codellama:7b"
@@ -200,6 +202,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     # columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
     # columns_info = f"Columns and their data types:\n{json.dumps(columns_info, indent=2)}\n"
 
+
     columns_info = f"Columns and their data types with examples:\n{columns_info}\n"
     column_descriptions = f"Descriptions of the columns:\n{column_descriptions}\n"
     sample_data = f"Few Sample data:\n{df_info.sample(5).to_markdown(index=False)}\n"
@@ -209,8 +212,10 @@ def get_pandas_query(prompt, df_info, column_descriptions):
 
     # Create the system prompt
     system_prompt = f"""
-    You are an expert in data analysis using python programming and pandas.
+    You are an code assistant who is expert in data analysis using python programming and pandas.
     You can CONVERT natural language queries or prompts based on provided context to python code using pandas.
+
+    The current date is {CURRENT_DATE}.
 
     IMPORTANT:
     - ONLY respond with valid Python code for pandas.
@@ -305,6 +310,7 @@ def execute_pandas_query(query_code, df):
 
             # Get the result
             result = local_vars.get('result', None)
+            logger.info(f"Local vars Keys: {local_vars.keys()}")
             logger.info(f"Local vars: {local_vars}")
         
         logger.info(f"After exec ...type:{type(result)}")
@@ -831,7 +837,7 @@ def main():
                     if result_type == "plotly_figure":
                         logger.info(f"mainFIGURE {result_type} -- {result['data'][0]['name']} - {result['data'][0]['type']} -- {error}")
                     else:
-                        logger.info(f"mainRESULTS : {type(result)} - {error}\n {result}")
+                        logger.info(f"mainRESULTS : {type(result)} - {error} - Results:\n{result}")
                     
                     # Do not display "View Generated Code"
                     # Display the generated code
