@@ -265,7 +265,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         "stream": False
     }
     
-    logger.info(f"System Prompt:\n {system_prompt}")
+    # logger.info(f"System Prompt:\n {system_prompt}")
 
     try:
         # Send the request to LLM
@@ -298,8 +298,9 @@ def execute_pandas_query(query_code, df):
         local_vars = {'df': df} 
         global_vars = {'px': px, 'pd': pd, 'np': np, 're': re}
         
+
         # Execute the code in the local scope
-        logger.info("Before exec ..............")
+        logger.info(f"Before exec .......{query_code[:15]}")
         if query_code.startswith("Example Prompts:"):
             # If the query is for prompts, return the generated code as is
             result = query_code
@@ -310,8 +311,10 @@ def execute_pandas_query(query_code, df):
 
             # Get the result
             result = local_vars.get('result', None)
-            logger.info(f"Local vars Keys: {local_vars.keys()}")
-            logger.info(f"Local vars: {local_vars}")
+            
+            logger.info(f"Local vars Keys: {local_vars.keys()}") # df, result:Figure, 
+            logger.info(f"Local vars: {type(local_vars['result'])} # {local_vars['result'].sample()}") # check for string reuslts
+    
         
         logger.info(f"After exec ...type:{type(result)}")
 
@@ -327,6 +330,9 @@ def execute_pandas_query(query_code, df):
         if isinstance(result, pd.DataFrame) and result.empty:
             return None, NO_DATA_MESSAGE, None
         
+        if isinstance(result, str): #  What is the most common customer industry among active accounts?
+            result_type = "text"
+        
         # Determine the type of result for appropriate display
         if isinstance(result, pd.DataFrame):
             result_type = "dataframe"
@@ -335,8 +341,6 @@ def execute_pandas_query(query_code, df):
             result_type = "plotly_figure"
         elif isinstance(result, (float, int)):
             result_type = "numeric"
-        elif result_type == "text":
-            result_type = "text"
         else:
             result_type = "other"
 
@@ -833,11 +837,13 @@ def main():
                     #     st.code(pandas_query, language="python")
                     
                     # Execute the query
+                    # Result Type: DataFrame, Plotly Figure, Numeric, Other, Text
+
                     result, error, result_type = execute_pandas_query(pandas_query, df)
                     if result_type == "plotly_figure":
-                        logger.info(f"mainFIGURE {result_type} -- {result['data'][0]['name']} - {result['data'][0]['type']} -- {error}")
+                        logger.info(f">> main FIGURE Type: {result_type}|{type(result)} - {error} - Results: {result['data'][0]['name']} - {result['data'][0]['type']}")
                     else:
-                        logger.info(f"mainRESULTS : {type(result)} - {error} - Results:\n{result}")
+                        logger.info(f">> main RESULTS Type: {result_type}|{type(result)} - {error} - Results: {result}")
                     
                     # Do not display "View Generated Code"
                     # Display the generated code
@@ -858,8 +864,10 @@ def main():
                             st.error(error)
                             st.session_state.messages.append({
                                 "role": "assistant", 
-                                "type": "text", 
-                                "content": pandas_query
+                                "type": "error", 
+                                "content": NO_MATCHING_RECORDS,
+                                'query': pandas_query,
+                                "data": result
                             })
                         else:
                             logger.error(f"After execution error: {error} for Pandas_query")
@@ -869,11 +877,14 @@ def main():
                             #     "content": f"Some issue has occurred, rewrite your prompt. Error: {error}"
                             # })
                     else:
+                        logger.error(f"MAIN if not Error: {error}")
+
                         if result is None:
-                            st.info("No matching records found for your query.")
+                            st.info("No matching records found for your query. Please try again with a different query.")
                             response_content = NO_MATCHING_RECORDS
 
-                        elif result_type == "dataframe":
+                        elif result_type == "dataframe":   # Result_type: DataFrame, Plotly Figure, Numeric, Other, Text
+                            logger.info("<DATAFRAME>")
                             total_results = len(result)
                             response_content = f"Found {total_results} matching records"
                             st.success(response_content)
@@ -884,7 +895,7 @@ def main():
                             st.download_button(
                                 label="Download results as CSV",
                                 data=csv,
-                                file_name="query_results.csv",
+                                file_name="query_results.csv", # TODO: filename with prompt 
                                 mime="text/csv"
                             )
                             # Store the result for message history 'role': 'assistant'
@@ -897,8 +908,9 @@ def main():
                             })
 
                         elif result_type == "plotly_figure":
+                            logger.info("<FIGURE>")
                             st.plotly_chart(result)
-                            response_content = "Here's the visualization taht you have requested"
+                            response_content = "Here's the visualization that you have requested"
                             st.session_state.messages.append({
                                 "role": "assistant", 
                                 "type": "plotly_figure", 
@@ -908,6 +920,7 @@ def main():
                             })
 
                         elif result_type == "numeric":
+                            logger.info("<NUMERIC>")
                             if isinstance(result, float):
                                 formatted_result = format_indian_currency(result)
                                 st.info(f"Result: {formatted_result}")
@@ -920,9 +933,11 @@ def main():
                                 "role": "assistant", 
                                 "type": "numeric", 
                                 "content": response_content,
+                                'query': pandas_query,
                                 "data": result
                             })
                         elif result_type == "other":
+                            logger.info("<OTHER>")
                             if len(result) > 0:
                                 if 'result = df' in pandas_query:
                                     st.dataframe(result)
@@ -935,6 +950,7 @@ def main():
                                         "data": result
                                     })
                         elif result_type == "text":
+                            logger.info("<TEXT>")
                             # If the result is a text prompt, display it
                             st.info(result)
                             response_content = str(result)
@@ -944,6 +960,7 @@ def main():
                                 "content": response_content
                             })
                         else:
+                            logger.info(f"<ELSE>->{result}")
                             st.write(result)
                             response_content = str(result)
                             st.session_state.messages.append({
