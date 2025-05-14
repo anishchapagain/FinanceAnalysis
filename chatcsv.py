@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+# import plotly.graph_objects as go
 import requests
 import json
 import re
@@ -253,7 +254,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     {sample_data}
     
     FINAL INSTRUCTIONS:
-    - TRY to return results as a DataFrame, with appropriate columns.
+    - EXCEPT for charts or plots or graphs, ALWAYS return results as a DataFrame, with appropriate columns.
     - If the query is for a specific value (e.g., average, sum, min, max), return it as a single value.
     - If the query is for a chart or visualization (show, plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
     - If the query is for statistics or aggregations, CALCULATE them and assign to result.
@@ -309,7 +310,7 @@ def execute_pandas_query(query_code, df):
         global_vars = {"px": px, "pd": pd, "np": np, "re": re}
 
         # Execute the code in the local scope
-        logger.info(f"Before exec .......{query_code[:15]}")
+        logger.info(f"Before exec >> {query_code[:15]}")
         if query_code.startswith("Example Prompts:"):
             # If the query is for prompts, return the generated code as is
             result = query_code
@@ -322,44 +323,53 @@ def execute_pandas_query(query_code, df):
             result = local_vars.get("result", None)
 
             logger.info(f"Local vars Keys: {local_vars.keys()}")  # df, result:Figure,
-            logger.info(
-                f"Local vars: {type(local_vars['result'])} # {local_vars['result'].sample()}"
-            )  # check for string reuslts
+            logger.info(f"Local vars Type: {type(local_vars['result'])}")
+            logger.info(f"Local vars Result: {local_vars['result']}")
 
-        logger.info(f"After exec ...type:{type(result)}")
+        logger.info(f"After exec >> type:{type(result)}")
 
         # Check if result exists or is NaN/None
         if result is None:
+            logger.info("Result is None")
             return None, NO_DATA_MESSAGE, None
 
         # For numeric results, check if NaN
         if isinstance(result, (float, int)) and (pd.isna(result) or result is None):
+            logger.info("Result is NaN")
             return None, NO_DATA_MESSAGE, None
 
         # For dataframes, check if empty
         if isinstance(result, pd.DataFrame) and result.empty:
+            logger.info("Result is empty DataFrame")
             return None, NO_DATA_MESSAGE, None
 
-        if isinstance(
-            result, str
-        ):  #  What is the most common customer industry among active accounts?
-            result_type = "text"
-
+        
         # Determine the type of result for appropriate display
-        if isinstance(result, pd.DataFrame):
+        if isinstance(result, (pd.DataFrame, pd.Series)):
+            logger.info("Result is dataframe")
             result_type = "dataframe"
-        # Check if result is a plotly figure by looking for common attributes
+        # elif isinstance(result, pd.Series):
+            # result_type = "series" # Convert Series to DataFrame for display            result = result.to_frame()
         elif hasattr(result, "update_layout") and hasattr(result, "data"):
+            logger.info("Result is plotly_figure1")
             result_type = "plotly_figure"
-        elif isinstance(result, (float, int)):
+        # elif isinstance(result, px.Figure):
+        #     logger.info("Result is plotly_figure2")
+        #     result_type = "plotly_figure"
+        elif isinstance(result, (float, int, np.integer, np.floating)):
+            logger.info("Result is numeric")
             result_type = "numeric"
+        elif isinstance(result, str): #  What is the most common customer industry among active accounts?
+            logger.info("Result is text")
+            result_type = "text"
         else:
+            logger.info("Result is other")
             result_type = "other"
 
-        # if type=other and result has Axes() then it is a plot retry the query
         return result, None, result_type
     except Exception as e:
-        logger.warning(f"Exception {str(e)}")
+        logger.error(str(e))
+        logger.warning(f"<Exception> {str(e)}") 
         return None, ERROR_MESSAGE, None
 
 
@@ -714,21 +724,21 @@ def df_to_image(df, filename="dataframe.png"):
     fig.savefig(filename, dpi=300, bbox_inches="tight")
 
 
-def get_history_df():
-    # Add general context about the last result
-    result_context = ""
-    if st.session_state.last_dataframe_result is not None:
-        df_result = st.session_state.last_dataframe_result
-        result_context = (
-            f"Previous query result summary:\n"
-            f"- Shape: {df_result.shape[0]} rows × {df_result.shape[1]} columns\n"
-            f"- Columns: {', '.join(df_result.columns)}\n"
-        )
-        # Add first few rows if the result is small
-        if len(df_result) <= 10:
-            result_context += f"\nPrevious result data:\n{df_result.to_string()}\n\n"
-        else:
-            result_context += f"\nSample of previous result (first 5 rows):\n{df_result.head().to_string()}\n\n"
+# def get_history_df():
+    # # Add general context about the last result
+    # result_context = ""
+    # if st.session_state.last_dataframe_result is not None:
+    #     df_result = st.session_state.last_dataframe_result
+    #     result_context = (
+    #         f"Previous query result summary:\n"
+    #         f"- Shape: {df_result.shape[0]} rows × {df_result.shape[1]} columns\n"
+    #         f"- Columns: {', '.join(df_result.columns)}\n"
+    #     )
+    #     # Add first few rows if the result is small
+    #     if len(df_result) <= 10:
+    #         result_context += f"\nPrevious result data:\n{df_result.to_string()}\n\n"
+    #     else:
+    #         result_context += f"\nSample of previous result (first 5 rows):\n{df_result.head().to_string()}\n\n"
 
 
 def set_session_state(assistant_message, error_message, content, pandas_query, result):
@@ -917,7 +927,7 @@ def main():
                 with st.spinner("Processing your query..."):
                     # Get the pandas query from LLM
                     pandas_query = get_pandas_query(
-                        query, df, st.session_state.column_descriptions
+                        query.strip(), df, st.session_state.column_descriptions
                     )
                     logger.info(
                         f"Generated Pandas Query:\n{pandas_query}\n------------"
@@ -969,26 +979,28 @@ def main():
                             "Show",
                         ]
                         if not any(elem in pandas_query for elem in expected_texts):
+                            logger.error(f"1.After execution error: {error}")
                             st.error(error)
-                            set_session_state(
-                                "assistant",
-                                "error",
-                                NO_MATCHING_RECORDS,
-                                pandas_query,
-                                result,
-                            )
+                            # set_session_state(
+                            #     "assistant",
+                            #     "error",
+                            #     NO_MATCHING_RECORDS,
+                            #     pandas_query,
+                            #     result,
+                            # )
 
                         else:
-                            logger.error(
-                                f"After execution error: {error} for Pandas_query"
-                            )
-                            # st.session_state.messages.append({
-                            #     "role": "assistant",
-                            #     "type": "error",
-                            #     "content": f"Some issue has occurred, rewrite your prompt. Error: {error}"
-                            # })
+                            logger.error(f"2.After execution error: {error}")
+                            st.error(error)
+                            # set_session_state(
+                            #     "assistant",
+                            #     "error",
+                            #     f"Some issue has occurred, rewrite your prompt. Error: {error}",
+                            #     pandas_query,
+                            #     result,
+                            # )
                     else:
-                        logger.error(f"MAIN if not Error: {error}")
+                        logger.info(f"MAIN if not Error: {error}")
 
                         if result is None:
                             st.info(
@@ -996,9 +1008,7 @@ def main():
                             )
                             response_content = NO_MATCHING_RECORDS
 
-                        elif (
-                            result_type == "dataframe"
-                        ):  # Result_type: DataFrame, Plotly Figure, Numeric, Other, Text
+                        elif (result_type == "dataframe"):  # Result_type: DataFrame, Plotly Figure, Numeric, Other, Text
                             logger.info("<DATAFRAME>")
                             total_results = len(result)
                             response_content = f"Found {total_results} matching records"
@@ -1055,7 +1065,7 @@ def main():
                                 pandas_query,
                                 result,
                             )
-
+                        # elif result_type == "series":
                         elif result_type == "other":
                             response_content = ''
                             error_message = ''
@@ -1111,3 +1121,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # st.rerun()
+    # st.session_state.messages = []
+    # st.session_state.selected_option = ""
+    # st.session_state.column_descriptions = []
+    # st.cache.clear()
+    
