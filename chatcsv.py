@@ -19,6 +19,7 @@ MATERIAL_ARROW_DOWN = ":material/arrow_drop_down:"
 
 CURRENT_DATE = datetime.now().strftime("%Y-%m-%d")
 
+BASE_URL = "http://localhost:11434/api/generate"
 
 # MODEL = "codellama:13b-code"
 # MODEL = "codellama:7b"
@@ -40,7 +41,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "column_descriptions" not in st.session_state:
     st.session_state.column_descriptions = ""
-
+if "show_sys_prompt" not in st.session_state:
+    st.session_state.show_sys_prompt = "NO"
 
 # Function to load data
 @st.cache_data
@@ -119,8 +121,7 @@ def get_column_info(df):
 
 # Function to get column descriptions from LLM
 def get_column_descriptions(df):
-    # Define the URL for the LLM API
-    url = "http://localhost:11434/api/generate"
+
     logger.info("Column Description Started")
 
     # Get basic column info
@@ -162,7 +163,7 @@ def get_column_descriptions(df):
 
     try:
         # Send the request to LLM
-        response = requests.post(url, json=payload)
+        response = requests.post(BASE_URL, json=payload)
         logger.info("Column Description Prompt Response")
 
         if response.status_code == 200:
@@ -201,9 +202,7 @@ def clean_query(generated_code):
 # Function to get pandas query from LLM
 def get_pandas_query(prompt, df_info, column_descriptions):
     logger.info(f"User Prompt: {prompt}")
-    # Define the URL for the LLM API
-    url = "http://localhost:11434/api/generate"
-
+   
     if column_descriptions == "":
         column_descriptions = get_column_descriptions(df_info)
         logger.info(f"Description Columns {len(column_descriptions)}")
@@ -275,11 +274,12 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         "stream": False,
     }
 
-    # logger.info(f"System Prompt:\n {system_prompt}")
+    if st.session_state.get("show_sys_prompt") == "No":
+        logger.info(f"System Prompt:\n {system_prompt}")
 
     try:
         # Send the request to LLM
-        response = requests.post(url, json=payload)
+        response = requests.post(BASE_URL, json=payload)
         logger.info("Waiting for response..")
 
         if response.status_code == 200:  # Extract the generated code from the response
@@ -316,13 +316,20 @@ def execute_pandas_query(query_code, df):
             result = query_code
             result_type = "text"
 
+        if query_code.strip().startswith("result =") and "Example Prompts:" in query_code: # both result and prompts are added
+            logger.info("<ISSUE example prompt>")
+            query_code = str(query_code.split("Example Prompts:")[0]).strip()
+        # '>=' not supported between instances of 'str' and 'Timestamp'
+            
+
+
         if query_code.startswith("result = "):
             exec(query_code, global_vars, local_vars)
 
             # Get the result
             result = local_vars.get("result", None)
 
-            logger.info(f"Local vars Keys: {local_vars.keys()}")  # df, result:Figure,
+            # logger.info(f"Local vars Keys: {local_vars.keys()}")  # df, result:Figure,
             logger.info(f"Local vars Type: {type(local_vars['result'])}")
             logger.info(f"Local vars Result: {local_vars['result']}")
 
@@ -342,10 +349,7 @@ def execute_pandas_query(query_code, df):
         if isinstance(result, pd.DataFrame) and result.empty:
             logger.info("Result is empty DataFrame")
             return None, NO_DATA_MESSAGE, None
-
-        
-        # Determine the type of result for appropriate display
-        if isinstance(result, (pd.DataFrame, pd.Series)):
+        elif isinstance(result, pd.DataFrame):
             logger.info("Result is dataframe")
             result_type = "dataframe"
         # elif isinstance(result, pd.Series):
@@ -362,6 +366,9 @@ def execute_pandas_query(query_code, df):
         elif isinstance(result, str): #  What is the most common customer industry among active accounts?
             logger.info("Result is text")
             result_type = "text"
+        elif isinstance(result, pd.Series):
+            logger.info("Result is Series")
+            result_type = "series"
         else:
             logger.info("Result is other")
             result_type = "other"
@@ -741,14 +748,20 @@ def df_to_image(df, filename="dataframe.png"):
     #         result_context += f"\nSample of previous result (first 5 rows):\n{df_result.head().to_string()}\n\n"
 
 
-def set_session_state(assistant_message, error_message, content, pandas_query, result):
+def set_session_state(assistant_message, error_message, content, prompt, pandas_query, result):
+    """
+    Type: ['plotly_figure','numeric','text','dataframe','series']
+    """
+    logger.info(f"--- {type(result)}")
     st.session_state.messages.append(
         {
             "role": assistant_message,
             "type": error_message,
             "content": content,
+            'prompt': prompt,
             "query": pandas_query,
             "data": result,
+            "data_type": type(result)
         }
     )
 
@@ -778,9 +791,9 @@ def main():
             logger.info(f"File uploaded {df.shape}")
             # Get column descriptions
             # if "column_descriptions" not in st.session_state:
-            logger.info(f"{st.session_state}")
+            logger.info(f"SESSION: \n<....session.........>\n{st.session_state}\n</....session..........>")
             if len(st.session_state.get("column_descriptions")) == 0:
-                logger.info("Column Description SESSION")
+                logger.info("SESSION: Column Description")
                 st.session_state.column_descriptions = get_column_descriptions(df)
 
     # Initialize session state for selection
@@ -889,22 +902,25 @@ def main():
             """
             )
 
-        # Display chat messages
+        # Display chat messages: For chat session
+        # CHAT Window
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-
                 # Display text messages
-                st.markdown(message["content"])
-
+                st.markdown(message["content"]) # Prompt and Result line (user|assistant: content)
                 # Display data frames, figures, etc.
                 if "data" in message:
-                    if message["type"] == "dataframe":
+                    if message["type"] == "dataframe" or message["type"] == "series":
                         st.dataframe(message["data"])
                     if message["type"] == "plotly_figure":
                         st.plotly_chart(message["data"])
-                    if message["type"] == "numeric":
-                        st.info(f"Result: {message['data']}")
+
+                    # if message["type"] == "numeric":
+                    #     st.info(f"Result: {message['data']}")
                     # if message["type"] == "text":
+                    #     st.info(f"Result: {message['data']}")
+                    # if message["type"] == "other":
+                    #     st.info(f"Result: {message['data']}")
 
         # Input for the query
         if query := st.chat_input(
@@ -922,13 +938,15 @@ def main():
             with st.chat_message("user"):
                 st.markdown(query)
 
+            prompt=''
             with st.chat_message("assistant"):
-
                 with st.spinner("Processing your query..."):
+                    prompt = query.strip()
                     # Get the pandas query from LLM
-                    pandas_query = get_pandas_query(
-                        query.strip(), df, st.session_state.column_descriptions
-                    )
+                    pandas_query = get_pandas_query(prompt, df, st.session_state.column_descriptions)
+                    if st.session_state.get("show_sys_prompt") == "No":
+                        st.session_state.get("show_sys_prompt") == "Yes" # TEMP log
+
                     logger.info(
                         f"Generated Pandas Query:\n{pandas_query}\n------------"
                     )
@@ -952,14 +970,7 @@ def main():
                     # Do not display "View Generated Code"
                     # Display the generated code
                     with st.expander("View Generated Code", icon=MATERIAL_ARROW_DOWN):
-                        st.code(
-                            pandas_query, language="python"
-                        )  # Show only for texts not for plots, dataframes, etc.
-                        # if result is None and result_type is None:
-                        #     logger.info(f"Result Expander: {result} -- ERROR:{error} -- TYPE:{result_type}")
-                        #     st.warning(ERROR_MESSAGE)
-                        # else:
-                        #     st.code(pandas_query, language="python")
+                        st.code(pandas_query, language="python")  
 
                     if error:
                         logger.error(f"MAIN Error: {error}")
@@ -1013,10 +1024,8 @@ def main():
                             total_results = len(result)
                             response_content = f"Found {total_results} matching records"
                             st.success(response_content)
-
-                            st.dataframe(
-                                result, use_container_width=True, hide_index=True
-                            )
+                            logger.info("<DF>...")
+                            st.dataframe(result, use_container_width=True, hide_index=True)
 
                             csv = result.to_csv(index=False)
                             st.download_button(
@@ -1026,27 +1035,45 @@ def main():
                                 mime="text/csv",
                             )
                             # Store the result for message history 'role': 'assistant'
-                            set_session_state(
-                                "assistant",
-                                "dataframe",
-                                response_content,
-                                pandas_query,
-                                result,
-                            )
+                            if total_results > 0:
+                                set_session_state(
+                                    "assistant",
+                                    "dataframe",
+                                    response_content,
+                                    prompt,
+                                    pandas_query,
+                                    result,
+                                )
+                        elif (result_type == "series"):
+                            logger.info("<SERIES>")
+                            # series to df
+                            temp_df = result.to_frame().T.reset_index(drop=True)
+                            total_results = len(temp_df)
+                            response_content = f"Found {total_results} matching records {type(temp_df)}"
+                            st.success(response_content)
+                            st.dataframe(temp_df, use_container_width=True, hide_index=True)
+                            if total_results > 0:
+                                set_session_state(
+                                    "assistant",
+                                    "series",
+                                    response_content,
+                                    prompt,
+                                    pandas_query,
+                                    temp_df,
+                                )
 
                         elif result_type == "plotly_figure":
                             logger.info("<FIGURE>")
                             st.plotly_chart(result)
-                            response_content = (
-                                "Here's the visualization that you have requested"
-                            )
-                            set_session_state(
-                                "assistant",
-                                "plotly_figure",
-                                response_content,
-                                pandas_query,
-                                result,
-                            )
+                            response_content = "Here's the visualization that you have requested"
+                            # set_session_state(
+                            #     "assistant",
+                            #     "plotly_figure",
+                            #     response_content,
+                            #     prompt,
+                            #     pandas_query,
+                            #     result,
+                            # )
 
                         elif result_type == "numeric":
                             logger.info("<NUMERIC>")
@@ -1062,10 +1089,10 @@ def main():
                                 "assistant",
                                 "numeric",
                                 response_content,
+                                prompt,
                                 pandas_query,
                                 result,
                             )
-                        # elif result_type == "series":
                         elif result_type == "other":
                             response_content = ''
                             error_message = ''
@@ -1088,39 +1115,70 @@ def main():
                                 response_content = NO_MATCHING_RECORDS
 
                             # Store the result for message history
-                            set_session_state(
-                                "assistant",
-                                error_message,
-                                response_content,
-                                pandas_query,
-                                result,
-                            )
+                            # set_session_state(
+                            #     "assistant",
+                            #     error_message,
+                            #     response_content,
+                            #     prompt,
+                            #     pandas_query,
+                            #     result,
+                            # )
 
                         elif result_type == "text":
                             logger.info("<TEXT>")
                             # If the result is a text prompt, display it
                             st.info(result)
-                            set_session_state(
-                                "assistant",
-                                "text",
-                                str(result),
-                                pandas_query,
-                                result,
-                            )
+                            # set_session_state(
+                            #     "assistant",
+                            #     "text",
+                            #     str(result),
+                            #     prompt,
+                            #     pandas_query,
+                            #     result,
+                            # )
                         else:
                             logger.info(f"<ELSE>->{result}")
                             st.info(result)
-                            set_session_state(
-                                "assistant",
-                                "text",
-                                str(result),
-                                pandas_query,
-                                result,
-                            )
+                            # set_session_state(
+                            #     "assistant",
+                            #     "text",
+                            #     str(result),
+                            #     prompt,
+                            #     pandas_query,
+                            #     result,
+                            # )
 
 
 if __name__ == "__main__":
     main()
+
+
+    # History:
+    # st.session_state.messages.append(
+    #     {
+    #         "role": assistant_message,
+    #         "type": error_message,
+    #         "content": content,
+    #         'prompt': prompt,
+    #         "query": pandas_query,
+    #         "data": result,
+    #         "data_type": type(result)
+    #     }
+    # )
+    # if "role" == "assistant":
+    #     if "type" == "dataframe": # Found 1 matching records  
+    #     if "type" == "numeric": # The result is: \d
+    #     if "type" == "series":  # Found 1 matching records
+            # query
+            # prompt
+            # data
+    # session_state.messages and History to be make different
+    
+    
+
+
+
+
     # st.rerun()
     # st.session_state.messages = []
     # st.session_state.selected_option = ""
