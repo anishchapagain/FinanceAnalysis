@@ -14,7 +14,6 @@ import logging
 NO_DATA_MESSAGE = "Sorry, but no matching records found. Please try a new prompt: if it's related to some specific value mention using Quotes."
 ERROR_MESSAGE = "Some issue has occurred, please try using new prompt."
 NO_MATCHING_RECORDS = "No matching records found for your query."
-
 MATERIAL_ARROW_DOWN = ":material/arrow_drop_down:"
 
 CURRENT_DATE = datetime.now().strftime("%Y-%m-%d")
@@ -113,7 +112,7 @@ def get_column_info(df):
             if len(str(sample_values)) > 100
             else str(sample_values)
         )
-        column_info.append(f"- `{col}` ({dtype}): Example values: {sample_str}")
+        column_info.append(f"- `{col}` ({dtype}): Example: {sample_str}")
 
     column_info_str = "\n".join(column_info)
     return column_info_str
@@ -184,13 +183,20 @@ def clean_query(generated_code):
         return ""
 
     if "result.show()" in generated_code:
-        logger.info("clean_query - result.show() found")
+        logger.info("<ISSUE clean_query - result.show() found")
         generated_code = generated_code.replace("result.show()", "")
 
     if "import plotly.express as px" in generated_code:
-        logger.info("clean_query - import plotly.express as px found")
+        logger.info("<ISSUE clean_query - import plotly.express as px found")
         generated_code = generated_code.replace("import plotly.express as px", "")
 
+    if generated_code.strip().startswith("import pandas as pd") and "result = " in generated_code:
+        logger.info("<ISSUE pandas is imported")
+        generated_code = str(generated_code.split("import pandas as pd")[-1]).strip()
+
+    # if generated_code.strip().startswith("# "):
+    #     logger.info("<ISSUE pandas is imported")
+    #     generated_code = str(generated_code.split("import pandas as pd")[-1]).strip()
     generated_code = generated_code.strip()
 
     # Remove any trailing punctuation
@@ -209,28 +215,26 @@ def get_pandas_query(prompt, df_info, column_descriptions):
 
     columns_info = get_column_info(df_info)
 
-    # Get dataframe schema
-    # columns_info = {col: str(df_info[col].dtype) for col in df_info.columns}
-    # columns_info = f"Columns and their data types:\n{json.dumps(columns_info, indent=2)}\n"
-
-    columns_info = f"Columns and their data types with examples:\n{columns_info}\n"
-    column_descriptions = f"Descriptions of the columns:\n{column_descriptions}\n"
-    sample_data = f"Few Sample data:\n{df_info.sample(5).to_markdown(index=False)}\n"
+    columns_info = f"{columns_info}\n"
+    column_descriptions = f"{column_descriptions}\n"
+    sample_data = f"{df_info.sample(5).to_markdown(index=False)}\n"
+    
     if set_conversation_history(5) is not None:
         conversation_history = set_conversation_history(5).strip()
     else:
         conversation_history = ""
 
     # Create the system prompt
-    system_prompt = f"""
-    You are an code assistant who is expert in data analysis using python programming and pandas.
-    You can CONVERT natural language queries or prompts based on provided context to python code using pandas.
-
+    system_prompt_old = f"""
+    You are a code assistant expert in data analysis using Python and pandas.
+    You CONVERT natural language queries or prompts based on provided context to python code using pandas.
+    
     The current date is {CURRENT_DATE}.
 
     IMPORTANT:
     - ONLY respond with valid Python code for pandas.
     - DO NOT include any explanation or markdown formatting.
+    - Refer to previous queries and results inside <HISTORY> when relevant to answer the current question.
     - The code should start with 'result = ' and return a pandas DataFrame or a calculated value.
     - The dataframe is already loaded as 'df'.
     
@@ -257,21 +261,91 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     {conversation_history}
     </HISTORY>
 
-    FINAL INSTRUCTIONS:
-    - Refer to previous queries and results if available inside tag HISTORY when relevant to answer the current question
+    IMPORTANT INSTRUCTIONS:
     - EXCEPT for charts or plots or graphs, ALWAYS return results as a DataFrame, with appropriate columns.
     - If the query is for a specific value (e.g., average, sum, min, max), return it as a single value.
     - If the query is for a chart or visualization (show, plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
     - If the query is for statistics or aggregations, CALCULATE them and assign to result.
     - If you're unsure about how to translate the query, create a simple filter that might be helpful.
-    - Include adequate related columns in the final result.
-    - DO NOT include any print statements or comments in the code.
-    - DO NOT include code imports or library references in the code.
     - Assume case sensitivity during query formation.
-    - If the query is regarding prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
-    - Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.
+    - REFER to previous queries and results when relevant to answer the current question
+    - If the query is regarding the prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
+    - Do NOT include any code in the prompts and start the prompts list with the text 'Example Prompts:'.
+    - DO NOT include code imports or library references in the code.
+    - DO NOT include any print() or comments in the code.
+    - INCLUDE adequate related columns in the final result
     """
 
+    system_prompt = f"""
+You are a code assistant who is expert in data analysis using Python and the Pandas library.
+Your role is to convert natural language queries into valid, efficient, and readable pandas code that analyzes the provided dataset.
+
+The current date is {CURRENT_DATE}.
+
+### Core Guidelines
+- ONLY respond with executable Python code using pandas.
+- DO NOT include any explanation, markdown formatting, or comments.
+- The code should always start with `result = `.
+- Return either a **pandas DataFrame** or a **single calculated value** as output.
+- The input DataFrame is pre-loaded as `df`.
+- ASSUME 'df' is the pre-loaded DataFrame.
+
+### Data Visualization Rules
+When generating visualization-related code:
+1. Use **Plotly Express (`px`) or Plotly Graph Objects (`go`)** for all visualizations.
+2. Do not include `fig.show()` commands.
+3. Ensure all plots have proper:
+   - Titles
+   - Axis labels
+   - Legends (where applicable)
+   - Color schemes for clarity
+4. Optimize for readability and interactivity.
+5. For charts, return the figure as `result = fig`.
+
+### Handling Extremum Values (Max/Min)
+- Preserve DataFrame structure when identifying rows with max/min values.
+- Use `.loc[[index]]` or `.iloc[[index]]` for row selection.
+- For single-row outputs, ensure they remain as DataFrames by using `.to_frame().T` or double brackets `df[[row]]`.
+
+### Date Operations
+- Convert string-based date columns to datetime format before filtering or comparison:  
+  `df['date_col'] = pd.to_datetime(df['date_col'])`
+- Use the `.dt` accessor to extract year/month/day components.
+- Include necessary date conversion logic in all date-related queries.
+
+### Dataset Schema Overview
+{columns_info}
+
+Column Descriptions:
+{column_descriptions}
+
+Sample Data:
+{sample_data}
+
+<HISTORY>
+{conversation_history}
+</HISTORY>
+
+### Output Format Rules
+- EXCEPT for charts or plots, ALWAYS return results as a DataFrame.
+- If the query asks for a scalar value (e.g., sum, average, count), return it directly.
+- For charts, return the figure as `result = fig`.
+- If the query is for a chart or visualization (plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
+- For statistics or aggregations, compute and assign the result.
+- If unsure, generate a relevant filter or subset of the data.
+
+### Context Awareness
+- REFER to previous queries and results inside `<HISTORY>` when relevant.
+- Maintain consistency with prior responses unless the new query contradicts them.
+
+### Final Instructions
+- If the query relates to example prompts, return a list starting with `Example Prompts:` containing 5-10 meaningful prompts for analyzing the dataset (do not include any code).
+- DO NOT include comments, import or print statements in generated code.
+- INCLUDE all relevant columns needed to answer the question clearly.
+- If HISTORY result for 'plot' is returning DataFrame or Series, try to plot figure using plotly.
+
+Your goal is to provide accurate, clean, and functional pandas code that answers the user’s question effectively based on the dataset schema and history.
+"""
     # Create the request payload
     payload = {
         "model": MODEL,  # or any other model you have
@@ -317,17 +391,25 @@ def execute_pandas_query(query_code, df):
 
         # Execute the code in the local scope
         logger.info(f"Before exec >> {query_code[:15]}")
+        # clean_query
         if query_code.startswith("Example Prompts:"):
             # If the query is for prompts, return the generated code as is
             result = query_code
             result_type = "text"
 
-        if query_code.strip().startswith("result =") and "Example Prompts:" in query_code: # both result and prompts are added
+        if query_code.strip().startswith("result = ") and "Example Prompts:" in query_code: # both result and prompts are added
             logger.info("<ISSUE example prompt>")
             query_code = str(query_code.split("Example Prompts:")[0]).strip()
         # '>=' not supported between instances of 'str' and 'Timestamp'
             
+        if query_code.strip().startswith("Example Prompts:") and "result = " in query_code: 
+            logger.info("<ISSUE prompt example>")
+            query_code = str(query_code.split("result =")[-1]).strip()
 
+        if query_code.strip().startswith("result = ") and "fig = px." in query_code:
+            logger.info("<ISSUE pandas and figures>")
+            if "result = fig" not in query_code: 
+                query_code +="\nresult = fig"
 
         if query_code.startswith("result = "):
             exec(query_code, global_vars, local_vars)
@@ -774,18 +856,15 @@ def set_conversation_history(max_messages=5):
    
     # Get the most recent messages up to max_messages
     temp_history_messages = [msg for msg in st.session_state.messages if msg.get('role') == 'assistant' and 'data' in msg][-max_messages:]
-    logger.info(temp_history_messages)
-
-    for message in temp_history_messages:
-        if message.get("data"):
+    # logger.info(f" <> {temp_history_messages}")
+    if len(temp_history_messages)>0:
+        for message in temp_history_messages:
             temp_content = message.get("content").strip()
             if re.match(r"Found\s+([1-9]+)\s+",temp_content):
-
-                # Format the user query
-                history.append("User Prompt: "+message.get("prompt",""))
                 
                 # Format the assistant response with data
                 df_data = message.get('data','')
+                
                 if len(df_data) > 10:
                     df_data = df_data.sample(10)
 
@@ -798,13 +877,21 @@ def set_conversation_history(max_messages=5):
                     historic_data = str(df_data)
                 
                 response = f"""
-                        Query executed: {message.get('query', '')}
-                        Results:
-                        {historic_data}
-                        """
+                Query: {message.get("prompt","").strip()}
+                Code: {message.get('query', '').strip()}
+                Output:
+                {historic_data}
+                """
+                history.append(response)
+            if re.match(r"The\s+result\s+is\:\s*(\d+)",temp_content):
+                response = f"""
+                Query: {message.get("prompt","").strip()}
+                Code: {message.get('query', "").strip()}
+                Output: {message.get('data',"")}
+                """
                 history.append(response)
             
-    return "\n\n".join(history)
+    return "\n".join(history)
 
 
 def set_session_state(assistant_message, error_message, content, prompt, pandas_query, result):
@@ -994,7 +1081,7 @@ def main():
 
         # Input for the query
         if query := st.chat_input(
-            "Ask something about the data...LLM will generate the output based on your prompts. Try to be specific as required."
+            "Talk to your data...LLM will generate the output based on your prompts. Ex:'prompts to analyze data'. Try to be specific as required."
         ):
             # Check if LLM is connected
             if not llm_connected:
@@ -1167,7 +1254,10 @@ def main():
                             response_content = ''
                             error_message = ''
                             logger.info("<OTHER>")
-                            if len(result) > 0:
+                            if isinstance(result, bool):
+                                st.info(result)
+
+                            if isinstance(result, (pd.DataFrame, pd.Series)) and len(result) > 0:
                                 if "result = df" in pandas_query:
                                     error_message = 'dataframe'
                                     st.dataframe(result)
@@ -1196,7 +1286,7 @@ def main():
 
                         elif result_type == "text":
                             logger.info("<TEXT>")
-                            # If the result is a text prompt, display it
+                            # If the result is a text prompt, display it                                
                             if result.strip().startswith("Example Prompts:"):
                                 st.info(result)
                                 set_session_state(
