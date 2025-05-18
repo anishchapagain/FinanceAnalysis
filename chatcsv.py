@@ -216,9 +216,10 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     columns_info = f"Columns and their data types with examples:\n{columns_info}\n"
     column_descriptions = f"Descriptions of the columns:\n{column_descriptions}\n"
     sample_data = f"Few Sample data:\n{df_info.sample(5).to_markdown(index=False)}\n"
-
-    # TODO:
-    # Check system prompt
+    if set_conversation_history(5) is not None:
+        conversation_history = set_conversation_history(5).strip()
+    else:
+        conversation_history = ""
 
     # Create the system prompt
     system_prompt = f"""
@@ -252,7 +253,12 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     {column_descriptions}
     {sample_data}
     
+    <HISTORY>
+    {conversation_history}
+    </HISTORY>
+
     FINAL INSTRUCTIONS:
+    - Refer to previous queries and results if available inside tag HISTORY when relevant to answer the current question
     - EXCEPT for charts or plots or graphs, ALWAYS return results as a DataFrame, with appropriate columns.
     - If the query is for a specific value (e.g., average, sum, min, max), return it as a single value.
     - If the query is for a chart or visualization (show, plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
@@ -274,8 +280,8 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         "stream": False,
     }
 
-    if st.session_state.get("show_sys_prompt") == "No":
-        logger.info(f"System Prompt:\n {system_prompt}")
+    # if st.session_state.get("show_sys_prompt") == "No":
+    logger.info(f"System Prompt:\n {system_prompt}")
 
     try:
         # Send the request to LLM
@@ -746,17 +752,77 @@ def df_to_image(df, filename="dataframe.png"):
     #         result_context += f"\nPrevious result data:\n{df_result.to_string()}\n\n"
     #     else:
     #         result_context += f"\nSample of previous result (first 5 rows):\n{df_result.head().to_string()}\n\n"
+def set_conversation_history(max_messages=5):
+    """
+    Format the last max_messages from session state into a structured conversation history
+    for the system prompt.
+    Role: assistant
+    Type: ['plotly_figure','numeric','text','dataframe','series']
+    Content: Found \d matching records
+    Prompt: Prompt from user
+    Query: result = df[df['account_type'] == 'SAMMAN BACHAT KHATA']
+    Data: 
+    DataType:
+
+    """
+    history = []
+    temp_history_messages = []
+    historic_data = ''
+    temp_content = ''
+    logger.info("History")
+    if 'messages' not in st.session_state:
+        return None
+    
+    # Get the most recent messages up to max_messages
+    temp_history_messages = [msg for msg in st.session_state.messages if msg.get('role') == 'assistant' and 'data' in msg][-max_messages:]
+    for message in temp_history_messages:
+        if message.get("type") in ["dataframe","series","numeric"] and message.get("data"):
+            temp_content = message.get("content").strip()
+            if temp_content.startswith("Found ") and re.match(r"Found\s+([1-9]+)\s+",temp_content):
+
+                # Format the user query
+                history.append(f"User Prompt: {message.get("prompt").strip()}")
+                
+                # Format the assistant response with data
+                df_data = message.get('data')
+                if len(df_data) > 10:
+                    df_data = df_data.sample(10)
+
+                # Convert dataframe to markdown table
+                if isinstance(df_data, pd.DataFrame):
+                    historic_data = df_data.to_markdown(index=False)
+                elif isinstance(df_data, pd.Series):
+                    historic_data = df_data.to_markdown(index=False)
+                else:
+                    historic_data = str(df_data)
+                
+                response = f"""
+                        Query executed: {message.get('query', '')}
+                        Results:
+                        {historic_data}
+                        """
+                history.append(response)
+            
+    return "\n\n".join(history)
 
 
 def set_session_state(assistant_message, error_message, content, prompt, pandas_query, result):
     """
+    Role: assistant
     Type: ['plotly_figure','numeric','text','dataframe','series']
+    Content: Found \d matching records
+    Prompt: Prompt from user
+    Query: result = df[df['account_type'] == 'SAMMAN BACHAT KHATA']
+    Data: 
+    DataType: 
+
+    st.session_state.messages.append({"role": "user", "content": query})
     """
     logger.info(f"--- {type(result)}")
     st.session_state.messages.append(
         {
-            "role": assistant_message,
-            "type": error_message,
+            "role": assistant_message,  # assistant
+            "type": error_message,      # data
             "content": content,
             'prompt': prompt,
             "query": pandas_query,
@@ -918,8 +984,10 @@ def main():
                 # Display data frames, figures, etc.
                 if "data" in message:
                     if message["type"] == "dataframe" or message["type"] == "series":
+                        # logger.info("DF SER")
                         st.dataframe(message["data"])
                     if message["type"] == "plotly_figure":
+                        # logger.info("FIG")
                         st.plotly_chart(message["data"])
 
                     # if message["type"] == "numeric":
@@ -1018,7 +1086,7 @@ def main():
                             #     result,
                             # )
                     else:
-                        logger.info(f"MAIN if not Error: {error}")
+                        logger.info(f"<MAIN>")
 
                         if result is None:
                             st.info(
@@ -1049,14 +1117,14 @@ def main():
                                     response_content,
                                     prompt,
                                     pandas_query,
-                                    result,
+                                    result, # TEMP
                                 )
                         elif (result_type == "series"):
                             logger.info("<SERIES>")
                             # series to df
                             temp_df = result.to_frame().T.reset_index(drop=True)
                             total_results = len(temp_df)
-                            response_content = f"Found {total_results} matching records {type(temp_df)}"
+                            response_content = f"Found {total_results} matching records"
                             st.success(response_content)
                             st.dataframe(temp_df, use_container_width=True, hide_index=True)
                             if total_results > 0:
@@ -1066,21 +1134,21 @@ def main():
                                     response_content,
                                     prompt,
                                     pandas_query,
-                                    temp_df,
+                                    temp_df, # TEMP
                                 )
 
                         elif result_type == "plotly_figure":
                             logger.info("<FIGURE>")
                             st.plotly_chart(result)
                             response_content = "Here's the visualization that you have requested"
-                            # set_session_state(
-                            #     "assistant",
-                            #     "plotly_figure",
-                            #     response_content,
-                            #     prompt,
-                            #     pandas_query,
-                            #     result,
-                            # )
+                            set_session_state(
+                                "assistant",
+                                "plotly_figure",
+                                response_content,
+                                prompt,
+                                pandas_query,
+                                result,
+                            )
 
                         elif result_type == "numeric":
                             logger.info("<NUMERIC>")
@@ -1134,15 +1202,16 @@ def main():
                         elif result_type == "text":
                             logger.info("<TEXT>")
                             # If the result is a text prompt, display it
-                            st.info(result)
-                            # set_session_state(
-                            #     "assistant",
-                            #     "text",
-                            #     str(result),
-                            #     prompt,
-                            #     pandas_query,
-                            #     result,
-                            # )
+                            if result.strip().startswith("Example Prompts:"):
+                                st.info(result)
+                                set_session_state(
+                                    "assistant",
+                                    "text",
+                                    str(result),
+                                    prompt,
+                                    pandas_query,
+                                    result,
+                                )
                         else:
                             logger.info(f"<ELSE>->{result}")
                             st.info(result)
