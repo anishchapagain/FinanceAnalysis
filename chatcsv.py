@@ -769,22 +769,23 @@ def set_conversation_history(max_messages=5):
     temp_history_messages = []
     historic_data = ''
     temp_content = ''
+
     logger.info("History")
-    if 'messages' not in st.session_state:
-        return None
-    
+   
     # Get the most recent messages up to max_messages
     temp_history_messages = [msg for msg in st.session_state.messages if msg.get('role') == 'assistant' and 'data' in msg][-max_messages:]
+    logger.info(temp_history_messages)
+
     for message in temp_history_messages:
-        if message.get("type") in ["dataframe","series","numeric"] and message.get("data"):
+        if message.get("data"):
             temp_content = message.get("content").strip()
-            if temp_content.startswith("Found ") and re.match(r"Found\s+([1-9]+)\s+",temp_content):
+            if re.match(r"Found\s+([1-9]+)\s+",temp_content):
 
                 # Format the user query
-                history.append(f"User Prompt: {message.get("prompt").strip()}")
+                history.append("User Prompt: "+message.get("prompt",""))
                 
                 # Format the assistant response with data
-                df_data = message.get('data')
+                df_data = message.get('data','')
                 if len(df_data) > 10:
                     df_data = df_data.sample(10)
 
@@ -830,12 +831,6 @@ def set_session_state(assistant_message, error_message, content, prompt, pandas_
             "data_type": type(result)
         }
     )
-
-def sample_prompts():
-    """
-    TODO: Dynamic with prompts auto generated.
-    """
-
 
 # Main app
 def main():
