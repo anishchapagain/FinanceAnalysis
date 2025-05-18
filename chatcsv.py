@@ -765,6 +765,11 @@ def set_session_state(assistant_message, error_message, content, prompt, pandas_
         }
     )
 
+def sample_prompts():
+    """
+    TODO: Dynamic with prompts auto generated.
+    """
+
 
 # Main app
 def main():
@@ -907,7 +912,9 @@ def main():
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 # Display text messages
-                st.markdown(message["content"]) # Prompt and Result line (user|assistant: content)
+                st.markdown(message["content"]) 
+                
+                # Prompt and Result line (user|assistant: content)
                 # Display data frames, figures, etc.
                 if "data" in message:
                     if message["type"] == "dataframe" or message["type"] == "series":
