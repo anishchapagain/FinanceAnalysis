@@ -225,16 +225,15 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         conversation_history = ""
 
     # Create the system prompt
-    system_prompt_old = f"""
-    You are a code assistant expert in data analysis using Python and pandas.
-    You CONVERT natural language queries or prompts based on provided context to python code using pandas.
+    system_prompt = f"""
+    You are an code assistant who is expert in data analysis using python programming and pandas.
+    You can CONVERT natural language queries or prompts based on provided context to python code using pandas.
     
     The current date is {CURRENT_DATE}.
 
     IMPORTANT:
     - ONLY respond with valid Python code for pandas.
     - DO NOT include any explanation or markdown formatting.
-    - Refer to previous queries and results inside <HISTORY> when relevant to answer the current question.
     - The code should start with 'result = ' and return a pandas DataFrame or a calculated value.
     - The dataframe is already loaded as 'df'.
     
@@ -256,29 +255,24 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     {columns_info}
     {column_descriptions}
     {sample_data}
-    
-    <HISTORY>
-    {conversation_history}
-    </HISTORY>
-
-    IMPORTANT INSTRUCTIONS:
-    - EXCEPT for charts or plots or graphs, ALWAYS return results as a DataFrame, with appropriate columns.
+   
+    FINAL INSTRUCTIONS:
+    - TRY to return results as a DataFrame, with appropriate columns.
     - If the query is for a specific value (e.g., average, sum, min, max), return it as a single value.
     - If the query is for a chart or visualization (show, plot), CREATE it using plotly and assign to 'result ='. For example: result = fig.
     - If the query is for statistics or aggregations, CALCULATE them and assign to result.
     - If you're unsure about how to translate the query, create a simple filter that might be helpful.
-    - Assume case sensitivity during query formation.
-    - REFER to previous queries and results when relevant to answer the current question
-    - If the query is regarding the prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
-    - Do NOT include any code in the prompts and start the prompts list with the text 'Example Prompts:'.
+    - Include adequate related columns in the final result.
+    - DO NOT include any print statements or comments in the code.
     - DO NOT include code imports or library references in the code.
-    - DO NOT include any print() or comments in the code.
-    - INCLUDE adequate related columns in the final result
+    - Assume case sensitivity during query formation.
+    - If the query is regarding prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
+    - Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.
     """
 
-    system_prompt = f"""
+    system_prompt_test = f"""
 You are an expert code assistant specializing in data analysis using Python and the pandas library. 
-Your primary function is to CONVERT natural language queries based on the provided context into executable Python code utilizing pandas.
+Your primary purpose is to CONVERT natural language queries based on the provided context into executable Python code utilizing pandas.
 
 The current date is {CURRENT_DATE}.
 
@@ -286,6 +280,7 @@ IMPORTANT
 - The code should ALWAYS start with 'result = '
 - Then dataframe is already loaded and available as 'df'. The input DataFrame is pre-loaded as `df`.
 - Do not EXPLAIN the code.
+- ONLY respond with valid, executable Python code (no explanations, comments, or markdown)
 
 CORE CODE GENERATION RULES:
 1.  **Code Only Output**: Unless specified otherwise (e.g., for "Example Prompts"), ONLY respond with valid and executable Python code using pandas. DO NOT include any explanations, markdown formatting (other than the code block itself), greetings, or conversational text.
@@ -307,7 +302,6 @@ CORE CODE GENERATION RULES:
 - ASSUME 'df' is the pre-loaded DataFrame.
 
 ### Data Visualization Rules
-When generating visualization-related code:
 1. Use **Plotly Express (`px`) or Plotly Graph Objects (`go`)** for all visualizations.
 2. **No `fig.show()`**: DO NOT include `fig.show()` commands. Assign the figure object to `result` (e.g., `result = fig`).
 3. Ensure all plots have proper:
@@ -361,10 +355,10 @@ Sample Data:
 
 ### Final Instructions
 - If the query relates to example prompts, return a list starting with `Example Prompts:` containing 5-10 meaningful prompts for analyzing the dataset (do not include any code).
-- DO NOT include comments, import or print statements in generated code.
+- DO NOT include comments, import or print statements in the generated code.
 - SINCE data in the dataset are related to columns availbale, INCLUDE all relevant columns as needed to answer the question clearly.
 
-Your goal is to provide accurate, clean, and functional pandas code that answers the user’s question effectively based on the dataset schema and history.
+Your goal is to provide accurate, clean, and functional pandas code that answers the user's question effectively based on the dataset schema and history.
 """
     # Create the request payload
     payload = {
@@ -375,7 +369,8 @@ Your goal is to provide accurate, clean, and functional pandas code that answers
     }
 
     # if st.session_state.get("show_sys_prompt") == "No":
-    logger.info(f"System Prompt:\n {system_prompt}")
+    # logger.info(f"System Prompt:\n {system_prompt}") # CHECK
+    logger.info(f"HISTORY :\n{conversation_history}")
 
     try:
         # Send the request to LLM
@@ -879,6 +874,7 @@ def set_conversation_history(max_messages=5):
     # logger.info(f" <> {temp_history_messages}")
     if len(temp_history_messages)>0:
         for message in temp_history_messages:
+            added=0
             temp_content = message.get("content").strip()
             if re.match(r"Found\s+([1-9]+)\s+",temp_content):
                 
@@ -903,13 +899,33 @@ def set_conversation_history(max_messages=5):
                 {historic_data}
                 """
                 history.append(response)
+                added+=1
             if re.match(r"The\s+result\s+is\:\s*(\d+)",temp_content):
                 response = f"""
                 Query: {message.get("prompt","").strip()}
                 Code: {message.get('query', "").strip()}
                 Output: {message.get('data',"")}
                 """
-                history.append(response)
+                if added<1:
+                    history.append(response)
+            if re.match(r"The\s+result\s+is\:\s*(\w+)",temp_content): # True, False, Head Office
+                logger.info("OTHER HIstoRY")
+                response = f"""
+                Query: {message.get("prompt","").strip()}
+                Code: {message.get('query', "").strip()}
+                Output: {message.get('data',"")}
+                """
+                if added<1:
+                    history.append(response)
+            if "Error" not in temp_content:
+                if "Examle Prompts:" not in temp_content:
+                    response = f"""
+                    Query: {message.get("prompt","").strip()}
+                    Code: {message.get('query', "").strip()}
+                    Output: {message.get('data',"")}
+                    """
+                if added<1:
+                    history.append(response)
             
     return "\n".join(history)
 
@@ -1188,7 +1204,7 @@ def main():
                             #     result,
                             # )
                     else:
-                        logger.info(f"<MAIN>")
+                        logger.info("<MAIN>")
 
                         if result is None:
                             st.info(
@@ -1274,25 +1290,34 @@ def main():
                             response_content = ''
                             error_message = ''
                             logger.info("<OTHER>")
-                            if isinstance(result, bool):
+                            if result == "True" or result == "False":
+                                logger.info("<other bool>")
                                 st.info(result)
+                                set_session_state(
+                                "assistant",
+                                "bool",
+                                f"The result is: {result}",
+                                prompt,
+                                pandas_query,
+                                result,
+                            )
 
-                            if isinstance(result, (pd.DataFrame, pd.Series)) and len(result) > 0:
-                                if "result = df" in pandas_query:
-                                    error_message = 'dataframe'
-                                    st.dataframe(result)
-                                    response_content = f"Found {len(result)} matching records"
-                                else:
-                                    error_message = 'Other_dataframe'
-                                    st.info(result)
-                                    response_content = result
-                            else:
-                                error_message = 'Other_else_dataframe'
-                                logger.info("<OTHER-ELSE>")
-                                st.info(
-                                    "No matching records found for your query. Please try again with a different query."
-                                )
-                                response_content = NO_MATCHING_RECORDS
+                            # if isinstance(result, (pd.DataFrame, pd.Series)) and len(result) > 0:
+                            #     if "result = df" in pandas_query:
+                            #         error_message = 'dataframe'
+                            #         st.dataframe(result)
+                            #         response_content = f"Found {len(result)} matching records"
+                            #     else:
+                            #         error_message = 'Other_dataframe'
+                            #         st.info(result)
+                            #         response_content = result
+                            # else:
+                            #     error_message = 'Other_else_dataframe'
+                            #     logger.info("<OTHER-ELSE>")
+                            #     st.info(
+                            #         "No matching records found for your query. Please try again with a different query."
+                            #     )
+                            #     response_content = NO_MATCHING_RECORDS
 
                             # Store the result for message history
                             # set_session_state(
@@ -1313,6 +1338,16 @@ def main():
                                     "assistant",
                                     "text",
                                     str(result),
+                                    prompt,
+                                    pandas_query,
+                                    result,
+                                )
+                            else: # Which branch has the most number of active accounts?
+                                st.info(result)
+                                set_session_state(
+                                    "assistant",
+                                    "text",
+                                    f"The result is: {str(result)}",
                                     prompt,
                                     pandas_query,
                                     result,
