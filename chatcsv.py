@@ -219,7 +219,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     column_descriptions = f"{column_descriptions}\n"
     sample_data = f"{df_info.sample(5).to_markdown(index=False)}\n"
     
-    conversation_history = set_conversation_history(5).strip()
+    conversation_history = set_conversation_history(10).strip()
 
     # Create the system prompt
     system_prompt_v1 = f"""
@@ -943,13 +943,13 @@ def df_to_image(df, filename="dataframe.png"):
     #         result_context += f"\nPrevious result data:\n{df_result.to_string()}\n\n"
     #     else:
     #         result_context += f"\nSample of previous result (first 5 rows):\n{df_result.head().to_string()}\n\n"
-def set_conversation_history(max_messages=5):
+def set_conversation_history(max_messages=10):
     """
     Format the last max_messages from session state into a structured conversation history
     for the system prompt.
     Role: assistant
     Type: ['plotly_figure','numeric','text','dataframe','series']
-    Content: Found \d matching records
+    Content: Found \d matching records : Found 294 matching records
     Prompt: Prompt from user
     Query: result = df[df['account_type'] == 'SAMMAN BACHAT KHATA']
     Data: 
