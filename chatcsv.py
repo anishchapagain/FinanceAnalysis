@@ -219,13 +219,10 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     column_descriptions = f"{column_descriptions}\n"
     sample_data = f"{df_info.sample(5).to_markdown(index=False)}\n"
     
-    if set_conversation_history(5) is not None:
-        conversation_history = set_conversation_history(5).strip()
-    else:
-        conversation_history = ""
+    conversation_history = set_conversation_history(5).strip()
 
     # Create the system prompt
-    system_prompt = f"""
+    system_prompt_v1 = f"""
     You are an code assistant who is expert in data analysis using python programming and pandas.
     You can CONVERT natural language queries or prompts based on provided context to python code using pandas.
     
@@ -255,7 +252,11 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     {columns_info}
     {column_descriptions}
     {sample_data}
-   
+    
+    <HISTORY>
+    {conversation_history}
+    </HISTORY>
+
     FINAL INSTRUCTIONS:
     - TRY to return results as a DataFrame, with appropriate columns.
     - If the query is for a specific value (e.g., average, sum, min, max), return it as a single value.
@@ -268,6 +269,97 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     - Assume case sensitivity during query formation.
     - If the query is regarding prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
     - Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.
+    """
+
+    system_prompt = f"""
+        You are a specialized pandas code generator. Your sole purpose is to translate natural language data analysis requests into precise, executable Python pandas code.
+        The current date is {CURRENT_DATE}.
+        
+        CRITICAL INSTRUCTIONS:
+        ONLY OUTPUT VALID PYTHON CODE - no explanations, comments, or markdown
+        ALL RESPONSES MUST START WITH: result =
+        ALL RESPONSES MUST BE IN SINGLE LINE
+        NEVER INCLUDE: import statements, print() functions, or comments
+        ASSUME: dataframe is already loaded as 'df'
+        DO NOT attempt to load, save, or modify files directly
+        
+        DATASET SCHEMA:
+        {columns_info}
+        
+        DATASET DESCRIPTION:
+        {column_descriptions}
+
+        TECHNICAL GUIDELINES:
+        
+        Date Operations
+        # ALWAYS convert dates before comparison
+        df['date_column'] = pd.to_datetime(df['date_column'], format='%d-%b-%y', errors='coerce')
+        # Use .dt accessor for components
+        year_filter = df['date_column'].dt.year == 2023
+        
+        Data Filtering
+        # Single condition
+        result = df[df['column'] == value]
+        # Multiple conditions 
+        result = df[(df['col1'] > value) & (df['col2'].isin(list_values))]
+        
+        Row Selection
+        # Get max/min value rows (preserve DataFrame structure)
+        result = df.loc[[df['column'].idxmax()]]
+        # Get specific rows
+        result = df.loc[df['condition'] == value, ['col1', 'col2']]
+        
+        Aggregation
+        # Group and aggregate
+        result = df.groupby('group_col')['value_col'].agg(['mean', 'sum', 'count'])
+        # Multiple column grouping
+        result = df.groupby(['col1', 'col2']).agg(dict('col3': 'sum', 'col4': 'mean'))
+        
+        Visualization
+        # Bar chart
+        fig = px.bar(df_aggregated, x='category', y='value', title='Chart Title')
+        # Time series
+        fig = px.line(df_time, x='date_column', y='value_column', title='Time Series')
+        # Scatter plot
+        fig = px.scatter(df, x='x_col', y='y_col', color='category', title='Scatter Plot')
+        result = fig
+        
+        HISTORY MECHANISM:
+        Previous queries and results are stored in <HISTORY> tags
+        Use history to understand context and build upon previous analyses
+        Maintain consistency with code patterns established in history
+        Analyze history before generating new code to ensure relevance
+        
+        DATA QUALITY HANDLING:
+        Check for and handle NaN values in critical operations
+        Use .fillna() for missing values when appropriate
+        Add type conversion where needed (df['col'].astype(type))
+        Use .str accessor for string operations
+        Use safe division with .replace() to avoid division by zero
+        
+        OUTPUT FORMATTING:
+        For visualization: Return the figure object directly (result = fig)
+        For single value queries: Return scalar value directly (result = value)
+        Include all relevant columns in output DataFrame
+        Maintain existing column names in output (DataFrame, Series)
+        Do not create new column names.
+        
+        EXAMPLE PATTERN:
+        User: "Show accounts with balance over 50000" Code response: result = df[df['account_balance'] > 50000]
+        User: "Plot account balances by branch" Code response: result = px.bar(df.groupby('bank_branch')['account_balance'].sum().reset_index(), x='bank_branch', y='account_balance', title='Account Balances by Branch', template='plotly_white')
+        
+        ERROR PREVENTION:
+        Ensure all column references match schema exactly
+        Always include parentheses in complex boolean operations
+        Use appropriate data types for comparisons
+        Add boundary checks for numeric operations
+
+        SPECIAL INSTRUCTION:
+        If the query is to provide example prompts, return a list starting with `Example Prompts:` containing 5-10 meaningful prompts for analyzing the dataset (do not include any code, explanations).
+        
+        <HISTORY>
+        {conversation_history}
+        </HISTORY>
     """
 
     system_prompt_test = f"""
@@ -350,8 +442,10 @@ Sample Data:
 - If unsure, generate a relevant filter or subset of the data.
 
 ### Context Awareness
-- REFER to previous queries and results inside `<HISTORY>` when relevant.
-- Maintain consistency with prior responses unless the new query contradicts them.
+- Previous queries and results are stored in <HISTORY> tags
+- Use history to understand context and build upon previous analyses
+- Maintain consistency with code patterns established in history
+- Analyze history before generating new code to ensure relevance
 
 ### Final Instructions
 - If the query relates to example prompts, return a list starting with `Example Prompts:` containing 5-10 meaningful prompts for analyzing the dataset (do not include any code).
@@ -874,10 +968,9 @@ def set_conversation_history(max_messages=5):
     # logger.info(f" <> {temp_history_messages}")
     if len(temp_history_messages)>0:
         for message in temp_history_messages:
-            added=0
             temp_content = message.get("content").strip()
-            if re.match(r"Found\s+([1-9]+)\s+",temp_content):
-                
+            if re.match(r"Found\s+([1-9]+)\s+matching",temp_content):
+                logger.info("OTHER resdatault")
                 # Format the assistant response with data
                 df_data = message.get('data','')
                 
@@ -890,6 +983,7 @@ def set_conversation_history(max_messages=5):
                 elif isinstance(df_data, pd.Series):
                     historic_data = df_data.to_markdown(index=False)
                 else:
+                    logger.info("OTHER resdatault>>")
                     historic_data = str(df_data)
                 
                 response = f"""
@@ -899,15 +993,14 @@ def set_conversation_history(max_messages=5):
                 {historic_data}
                 """
                 history.append(response)
-                added+=1
             if re.match(r"The\s+result\s+is\:\s*(\d+)",temp_content):
+                logger.info("OTHER result")
                 response = f"""
                 Query: {message.get("prompt","").strip()}
                 Code: {message.get('query', "").strip()}
                 Output: {message.get('data',"")}
                 """
-                if added<1:
-                    history.append(response)
+                history.append(response)
             if re.match(r"The\s+result\s+is\:\s*(\w+)",temp_content): # True, False, Head Office
                 logger.info("OTHER HIstoRY")
                 response = f"""
@@ -915,17 +1008,16 @@ def set_conversation_history(max_messages=5):
                 Code: {message.get('query', "").strip()}
                 Output: {message.get('data',"")}
                 """
-                if added<1:
-                    history.append(response)
-            if "Error" not in temp_content:
-                if "Examle Prompts:" not in temp_content:
-                    response = f"""
-                    Query: {message.get("prompt","").strip()}
-                    Code: {message.get('query', "").strip()}
-                    Output: {message.get('data',"")}
-                    """
-                if added<1:
-                    history.append(response)
+                history.append(response)
+            # if "Error" not in temp_content:
+            #     logger.info("OTHER Example")
+            #     if "Example Prompts:" not in temp_content:
+            #         response = f"""
+            #         Query: {message.get("prompt","").strip()}
+            #         Code: {message.get('query', "").strip()}
+            #         Output: {message.get('data',"")}
+            #         """
+            #         history.append(response)
             
     return "\n".join(history)
 
