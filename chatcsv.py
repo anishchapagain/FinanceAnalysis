@@ -16,9 +16,10 @@ ERROR_MESSAGE = "Some issue has occurred, please try using new prompt."
 NO_MATCHING_RECORDS = "No matching records found for your query."
 MATERIAL_ARROW_DOWN = ":material/arrow_drop_down:"
 
-CURRENT_DATE = datetime.now().strftime("%Y-%m-%d")
+CURRENT_DATE = datetime.now().strftime("%Y-%m-%d, %H:%M:%S %p")
 
 BASE_URL = "http://localhost:11434/api/generate"
+
 
 # MODEL = "codellama:13b-code"
 # MODEL = "codellama:7b"
@@ -34,6 +35,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 
 # Initialize session state variables for current query
 if "messages" not in st.session_state:
@@ -101,12 +103,21 @@ def setup_logger(log_dir="logs"):
 
 logger = setup_logger()
 
+def convert_object_to_datetime(df, threshold=0.8):
+    for col in df.select_dtypes(include='object').columns:
+        converted = pd.to_datetime(df[col], errors='coerce', format="%d-%b-%y")
+        success_ratio = converted.notna().mean()
+        if success_ratio >= threshold:
+            df[col] = converted
+    return df
+
 
 def get_column_info(df):
     column_info = []
-    for col in df.columns:
-        dtype = str(df[col].dtype)
-        sample_values = df[col].dropna().sample(min(5, df[col].count())).tolist()
+    temp_df = convert_object_to_datetime(df)
+    for col in temp_df.columns:
+        dtype = str(temp_df[col].dtype)
+        sample_values = temp_df[col].dropna().sample(min(5, temp_df[col].count())).tolist()
         sample_str = (
             str(sample_values)[:100] + "..."
             if len(str(sample_values)) > 100
@@ -117,7 +128,6 @@ def get_column_info(df):
     column_info_str = "\n".join(column_info)
     return column_info_str
 
-
 # Function to get column descriptions from LLM
 def get_column_descriptions(df):
 
@@ -125,12 +135,6 @@ def get_column_descriptions(df):
 
     # Get basic column info
     column_info = get_column_info(df)
-    # column_info = []
-    # for col in df.columns:
-    #     dtype = str(df[col].dtype)
-    #     sample_values = df[col].dropna().sample(min(3, df[col].count())).tolist()
-    #     sample_str = str(sample_values)[:100] + "..." if len(str(sample_values)) > 100 else str(sample_values)
-    #     column_info.append(f"- {col}: {dtype}, example values: {sample_str}")
 
     # Create the system prompt for column descriptions
     system_prompt_column = f"""
@@ -204,55 +208,138 @@ def clean_query(generated_code):
 
     return generated_code
 
+def get_prompt_template():
+    """
+    Prompt Template
+    """
+    with open("./prompts/main.json","r",encoding='utf-8') as file:
+        prompt_data = json.load(file)
+
+    return {
+        "system_prompt_head": "\n".join(prompt_data["system_prompt_head"]),
+        "critical_instructions":"\n".join(prompt_data["critical_instructions"]),
+        "history":"\n".join(prompt_data["history"]),
+        "date_operations":"\n".join(prompt_data["date_operations"]),
+        "special_instructions":"\n".join(prompt_data["special_instructions"]),
+    }
 
 # Function to get pandas query from LLM
 def get_pandas_query(prompt, df_info, column_descriptions):
     logger.info(f"User Prompt: {prompt}")
-   
+    
+    prompts = get_prompt_template()
     if column_descriptions == "":
         column_descriptions = get_column_descriptions(df_info)
         logger.info(f"Description Columns {len(column_descriptions)}")
 
     columns_info = get_column_info(df_info)
 
-    columns_info = f"{columns_info}\n"
-    column_descriptions = f"{column_descriptions}\n"
-    sample_data = f"{df_info.sample(5).to_markdown(index=False)}\n"
+    columns_info = f"Columns and their data types with examples:\n{columns_info}\n"
+    column_descriptions = f"Descriptions of the columns:\n{column_descriptions}"
+    sample_data = f"Dataset sample:\n{df_info.sample(5).to_markdown(index=False)}\n"
     
     conversation_history = set_conversation_history(10).strip()
 
-    # Create the system prompt
-    system_prompt_v1 = f"""
-    You are an code assistant who is expert in data analysis using python programming and pandas.
-    You can CONVERT natural language queries or prompts based on provided context to python code using pandas.
-    
-    The current date is {CURRENT_DATE}.
+    system_prompt=f"""
+You are an expert in data analysis using Python programming and pandas.
+You convert natural language queries into valid and executable Pandas code based on the provided dataset context.
 
+The current date is {CURRENT_DATE}
+
+### INSTRUCTIONS:
+- ONLY respond with valid Python code for pandas or plotly visualizations.
+- DO NOT include any explanation, markdown formatting, comments, or print statements.
+- The code should start with: `result = ` and return either:
+    - A **pandas DataFrame/Series**, or
+    - A **Plotly figure object**, or
+    - A **scalar value** (e.g., sum, average, count)
+- The input dataframe is already loaded as `df`.
+- Always return only the code — no extra text.
+
+### VISUALIZATION RULES:
+- ALWAYS use Plotly (import plotly.express as px, import plotly.graph_objects as go) for charts.
+- Ensure all plots have proper titles, labels, legends, and color schemes.
+- Do not call `fig.show()` — just assign the figure to `result`.
+
+### DATA HANDLING BEST PRACTICES:
+- When identifying rows with max/min values, preserve DataFrame structure using `.loc[[index]]` or `.iloc[[index]]`.
+- For **Series**, ensure they remain DataFrames by using `.to_frame().T`.
+- When working with dates:
+    - Convert string columns to datetime using `pd.to_datetime()` before filtering.
+    - Use `.dt` accessor to extract year/month/day from datetime columns.
+    - Include date conversion logic in the generated code when needed.
+
+### CONTEXTUAL UNDERSTANDING:
+- Previous interactions are stored in `<HISTORY>`. Use them to:
+    - Understand references like "that column", "previous result", etc.
+    - Maintain logical continuity between queries.
+    - Build upon earlier results where relevant.
+
+### DATASET SCHEMA:
+Columns and descriptions are based on the uploaded file. Example schema includes:
+{columns_info}
+{column_descriptions}
+
+### SAMPLE OUTPUT TYPES:
+- Query → Aggregation: e.g., total balance, average age
+- Query → Filtered DataFrame: e.g., customers from Damauli branch
+- Query → Visualization: e.g., plot account balances by branch
+
+### FINAL RULES:
+- Try to return results as DataFrames with appropriate columns.
+- If unsure how to interpret a query, return a simple but relevant filter.
+- Assume case sensitivity unless specified otherwise.
+- If asked for prompts, provide a list starting with: `Example Prompts:`
+- Do not include any code in example prompts.
+
+### HISTORY:
+Previous user queries and responses are stored in <HISTORY> tags. You must refer to this for context.
+
+<HISTORY>
+{prompts["history"]}
+</HISTORY>
+    """
+    # Create the system prompt
+    system_prompt_a = f"""{prompts['system_prompt_head']}
+    The current date is {CURRENT_DATE}.
+    
     IMPORTANT:
     - ONLY respond with valid Python code for pandas.
     - DO NOT include any explanation or markdown formatting.
     - The code should start with 'result = ' and return a pandas DataFrame or a calculated value.
     - The dataframe is already loaded as 'df'.
+    - Respond ONLY with valid Python code using Pandas (and Plotly for visualizations).
+    - DO NOT include any explanations, comments, or markdown formatting.
+    - Every response must begin with:  
+    ```python
+    result = 
+    ```
+    - The result must be a **Pandas DataFrame, Series, or visualization object**, depending on the task.
+    - DO NOT return array of values.
+    - DO NOT include fig.show() commands.
+
     
     When generating code for data visualization tasks:
-    1. ALWAYS use Plotly (import plotly.express as px, import plotly.graph_objects as go) for all visualizations
-    2. DO NOT include fig.show() commands
+    1. ALWAYS use Plotly (`import plotly.express as px`, `import plotly.graph_objects as go`) for all visualizations
+    2. DO NOT include `fig.show()` commands
     3. ENSURE all plots have proper coloring, labels, titles, and legends.
     4. Optimize for readability and interactivity
     
     When identifying rows with maximum/minimum values:
     1. Use methods that preserve DataFrame structure (e.g., .loc with double brackets or .iloc[[index]])
-    2. For single row selections, ensure they remain as DataFrames by using .to_frame().T when necessary, or by selecting with double brackets
+    2. For single row selections, ensure they remain as DataFrames by using `.to_frame().T` when necessary.
     
     When working with dates:
-    1. Always CONVERT string date columns to datetime using pd.to_datetime() before any filtering
+    1. Always CONVERT string date columns to datetime using pd.to_datetime() before any filtering and as necessary only.
     2. Use .dt accessor to extract components (year, month, day) from datetime columns
     3. Include proper date conversion code in all queries involving date comparisons
-
+    
     {columns_info}
     {column_descriptions}
     {sample_data}
     
+    {prompts["history"]}
+
     <HISTORY>
     {conversation_history}
     </HISTORY>
@@ -268,20 +355,15 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     - DO NOT include code imports or library references in the code.
     - Assume case sensitivity during query formation.
     - If the query is regarding prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
-    - Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.
+    - Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.    
     """
 
-    system_prompt = f"""
-        You are a specialized pandas code generator. Your sole purpose is to translate natural language data analysis requests into precise, executable Python pandas code.
+    system_prompt_v3 = f"""
+        {prompts['system_prompt_head']}
         The current date is {CURRENT_DATE}.
         
         CRITICAL INSTRUCTIONS:
-        ONLY OUTPUT VALID PYTHON CODE - no explanations, comments, or markdown
-        ALL RESPONSES MUST START WITH: result =
-        ALL RESPONSES MUST BE IN SINGLE LINE
-        NEVER INCLUDE: import statements, print() functions, or comments
-        ASSUME: dataframe is already loaded as 'df'
-        DO NOT attempt to load, save, or modify files directly
+        {prompts['critical_instructions']}
         
         DATASET SCHEMA:
         {columns_info}
@@ -290,12 +372,8 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         {column_descriptions}
 
         TECHNICAL GUIDELINES:
-        
-        Date Operations
-        # ALWAYS convert dates before comparison
-        df['date_column'] = pd.to_datetime(df['date_column'], format='%d-%b-%y', errors='coerce')
-        # Use .dt accessor for components
-        year_filter = df['date_column'].dt.year == 2023
+        {prompts['date_operations']}
+
         
         Data Filtering
         # Single condition
@@ -325,10 +403,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         result = fig
         
         HISTORY MECHANISM:
-        Previous queries and results are stored in <HISTORY> tags
-        Use history to understand context and build upon previous analyses
-        Maintain consistency with code patterns established in history
-        Analyze history before generating new code to ensure relevance
+        {prompts["history"]}
         
         DATA QUALITY HANDLING:
         Check for and handle NaN values in critical operations
@@ -340,22 +415,17 @@ def get_pandas_query(prompt, df_info, column_descriptions):
         OUTPUT FORMATTING:
         For visualization: Return the figure object directly (result = fig)
         For single value queries: Return scalar value directly (result = value)
-        Include all relevant columns in output DataFrame
+        Include all relevant columns in the output
         Maintain existing column names in output (DataFrame, Series)
         Do not create new column names.
-        
-        EXAMPLE PATTERN:
-        User: "Show accounts with balance over 50000" Code response: result = df[df['account_balance'] > 50000]
-        User: "Plot account balances by branch" Code response: result = px.bar(df.groupby('bank_branch')['account_balance'].sum().reset_index(), x='bank_branch', y='account_balance', title='Account Balances by Branch', template='plotly_white')
-        
+         
         ERROR PREVENTION:
         Ensure all column references match schema exactly
         Always include parentheses in complex boolean operations
         Use appropriate data types for comparisons
         Add boundary checks for numeric operations
 
-        SPECIAL INSTRUCTION:
-        If the query is to provide example prompts, return a list starting with `Example Prompts:` containing 5-10 meaningful prompts for analyzing the dataset (do not include any code, explanations).
+        {prompts["special_instructions"]}
         
         <HISTORY>
         {conversation_history}
@@ -530,7 +600,7 @@ def execute_pandas_query(query_code, df):
             logger.info(f"Local vars Type: {type(local_vars['result'])}")
             logger.info(f"Local vars Result: {local_vars['result']}")
 
-        logger.info(f"After exec >> type:{type(result)}")
+        # logger.info(f"After exec >> type:{type(result)}")
 
         # Check if result exists or is NaN/None
         if result is None:
@@ -551,12 +621,9 @@ def execute_pandas_query(query_code, df):
             result_type = "dataframe"
         # elif isinstance(result, pd.Series):
             # result_type = "series" # Convert Series to DataFrame for display            result = result.to_frame()
-        elif hasattr(result, "update_layout") and hasattr(result, "data"):
+        elif hasattr(result, "update_layout") and hasattr(result, "data"): # isinstance(result, px.Figure):
             logger.info("Result is plotly_figure1")
             result_type = "plotly_figure"
-        # elif isinstance(result, px.Figure):
-        #     logger.info("Result is plotly_figure2")
-        #     result_type = "plotly_figure"
         elif isinstance(result, (float, int, np.integer, np.floating)):
             logger.info("Result is numeric")
             result_type = "numeric"
@@ -566,6 +633,9 @@ def execute_pandas_query(query_code, df):
         elif isinstance(result, pd.Series):
             logger.info("Result is Series")
             result_type = "series"
+        elif isinstance(result, np.ndarray):
+            logger.info("Result is nDarray")
+            result_type = "ndarray"
         else:
             logger.info("Result is other")
             result_type = "other"
@@ -928,21 +998,6 @@ def df_to_image(df, filename="dataframe.png"):
     fig.savefig(filename, dpi=300, bbox_inches="tight")
 
 
-# def get_history_df():
-    # # Add general context about the last result
-    # result_context = ""
-    # if st.session_state.last_dataframe_result is not None:
-    #     df_result = st.session_state.last_dataframe_result
-    #     result_context = (
-    #         f"Previous query result summary:\n"
-    #         f"- Shape: {df_result.shape[0]} rows × {df_result.shape[1]} columns\n"
-    #         f"- Columns: {', '.join(df_result.columns)}\n"
-    #     )
-    #     # Add first few rows if the result is small
-    #     if len(df_result) <= 10:
-    #         result_context += f"\nPrevious result data:\n{df_result.to_string()}\n\n"
-    #     else:
-    #         result_context += f"\nSample of previous result (first 5 rows):\n{df_result.head().to_string()}\n\n"
 def set_conversation_history(max_messages=10):
     """
     Format the last max_messages from session state into a structured conversation history
@@ -1070,8 +1125,6 @@ def main():
                 st.error("Failed to load data. Please check the file path and format.")
                 return
             logger.info(f"File uploaded {df.shape}")
-            # Get column descriptions
-            # if "column_descriptions" not in st.session_state:
             logger.info(f"SESSION: \n<....session.........>\n{st.session_state}\n</....session..........>")
             if len(st.session_state.get("column_descriptions")) == 0:
                 logger.info("SESSION: Column Description")
@@ -1310,7 +1363,7 @@ def main():
                             response_content = f"Found {total_results} matching records"
                             st.success(response_content)
                             logger.info("<DF>...")
-                            st.dataframe(result, use_container_width=True, hide_index=True)
+                            st.dataframe(result, use_container_width=True, hide_index=False)
 
                             csv = result.to_csv(index=False)
                             st.download_button(
@@ -1332,7 +1385,7 @@ def main():
                         elif (result_type == "series"):
                             logger.info("<SERIES>")
                             # series to df
-                            temp_df = result.to_frame().T.reset_index(drop=True)
+                            temp_df = result.to_frame() #.T.reset_index(drop=True)
                             total_results = len(temp_df)
                             response_content = f"Found {total_results} matching records"
                             st.success(response_content)
@@ -1346,7 +1399,22 @@ def main():
                                     pandas_query,
                                     temp_df, # TEMP
                                 )
-
+                        elif (result_type == "ndarray"):
+                            logger.info("<NDARRAY>")
+                            temp_df = pd.Series(result)
+                            total_results = len(temp_df)
+                            response_content = f"Found {total_results} matching records"
+                            st.success(response_content)
+                            st.dataframe(temp_df, use_container_width=True, hide_index=True)
+                            if total_results > 0:
+                                set_session_state(
+                                    "assistant",
+                                    "ndarray",
+                                    response_content,
+                                    prompt,
+                                    pandas_query,
+                                    temp_df, # TEMP
+                                )
                         elif result_type == "plotly_figure":
                             logger.info("<FIGURE>")
                             st.plotly_chart(result)
@@ -1394,22 +1462,22 @@ def main():
                                 result,
                             )
 
-                            # if isinstance(result, (pd.DataFrame, pd.Series)) and len(result) > 0:
-                            #     if "result = df" in pandas_query:
-                            #         error_message = 'dataframe'
-                            #         st.dataframe(result)
-                            #         response_content = f"Found {len(result)} matching records"
-                            #     else:
-                            #         error_message = 'Other_dataframe'
-                            #         st.info(result)
-                            #         response_content = result
-                            # else:
-                            #     error_message = 'Other_else_dataframe'
-                            #     logger.info("<OTHER-ELSE>")
-                            #     st.info(
-                            #         "No matching records found for your query. Please try again with a different query."
-                            #     )
-                            #     response_content = NO_MATCHING_RECORDS
+                            if isinstance(result, (pd.DataFrame, pd.Series)) and len(result) > 0:
+                                if "result = df" in pandas_query:
+                                    error_message = 'dataframe'
+                                    st.dataframe(result)
+                                    response_content = f"Found {len(result)} matching records"
+                                else:
+                                    error_message = 'Other_dataframe'
+                                    st.info(result)
+                                    response_content = result
+                            else:
+                                error_message = 'Other_else_dataframe'
+                                logger.info("<OTHER-ELSE>")
+                                st.info(
+                                    "No matching records found for your query. Please try again with a different query."
+                                )
+                                response_content = NO_MATCHING_RECORDS
 
                             # Store the result for message history
                             # set_session_state(
