@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-# import plotly.graph_objects as go
+import plotly.graph_objects as go
 import requests
 import json
 import re
@@ -24,13 +24,16 @@ BASE_URL = "http://localhost:11434/api/generate"
 # MODEL = "codellama:13b-code"
 # MODEL = "codellama:7b"
 MODEL = "qwen2.5-coder:7b"
+# MODEL = "gemma3:latest"
+# MODEL = "codegemma:7b-code-q4_K_M"
+# MODEL = "deepseek-r1:8b"
 # MODEL = "qwen2.5-coder"
 # MODEL = "qwen2.5-coder:32b"
 # MODEL = "qwen2.5-coder:14b"
 
 # Set page configuration
 st.set_page_config(
-    page_title="Data Query - Account Transactions",
+    page_title="Data Query - Chat with your data",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -188,11 +191,19 @@ def clean_query(generated_code):
 
     if "result.show()" in generated_code:
         logger.info("<ISSUE clean_query - result.show() found")
-        generated_code = generated_code.replace("result.show()", "")
+        generated_code = generated_code.replace("result.show()", "").strip()
+    
+    if "fig.show()" in generated_code:
+        logger.info("<ISSUE clean_query - fig.show() found")
+        generated_code = generated_code.replace("fig.show()", "").strip()
 
     if "import plotly.express as px" in generated_code:
         logger.info("<ISSUE clean_query - import plotly.express as px found")
-        generated_code = generated_code.replace("import plotly.express as px", "")
+        generated_code = generated_code.replace("import plotly.express as px", "").strip()
+    
+    if "import plotly.graph_objs as go" in generated_code:
+        logger.info("<ISSUE clean_query - import plotly.graph_objs as go found")
+        generated_code = generated_code.replace("import plotly.graph_objs as go", "").strip()
 
     if generated_code.strip().startswith("import pandas as pd") and "result = " in generated_code:
         logger.info("<ISSUE pandas is imported")
@@ -234,73 +245,125 @@ def get_pandas_query(prompt, df_info, column_descriptions):
 
     columns_info = get_column_info(df_info)
 
-    columns_info = f"Columns and their data types with examples:\n{columns_info}\n"
+    columns_info = f"Dataset Information\nColumns and their data types with few examples:\n{columns_info}\n"
     column_descriptions = f"Descriptions of the columns:\n{column_descriptions}"
     sample_data = f"Dataset sample:\n{df_info.sample(5).to_markdown(index=False)}\n"
     
     conversation_history = set_conversation_history(10).strip()
 
-    system_prompt=f"""
-You are an expert in data analysis using Python programming and pandas.
-You convert natural language queries into valid and executable Pandas code based on the provided dataset context.
+    system_prompt_v4=f"""
+You are a coding assistant specialized in Python based data analysis using pandas.
+You use a structured chain of thought process to ensure accuracy, safety, and explainability when analyzing data provided.
+Your task is to convert natural language prompts into valid and executable Pandas code, tailored to the provided dataset.
 
-The current date is {CURRENT_DATE}
+{columns_info}
+{column_descriptions}
+{sample_data}
 
-### INSTRUCTIONS:
-- ONLY respond with valid Python code for pandas or plotly visualizations.
-- DO NOT include any explanation, markdown formatting, comments, or print statements.
-- The code should start with: `result = ` and return either:
-    - A **pandas DataFrame/Series**, or
+When provided with a natural language query about the dataset, follow this chain of thought process to convert it to executable pandas code:
+Step 1: Query Understanding
+- Parse the user's query to identify the core analytical question
+- Determine what data columns are needed
+- Identify any filtering, grouping, or aggregation operations required
+- Note any ambiguous terms that need clarification
+
+Step 2: Data Preparation Planning
+- Identify any required data type conversions (especially for dates)
+- Determine if any data cleaning is needed
+- Plan any feature engineering or calculated fields
+
+Step 3: Algorithm Design
+- Break down the analysis into logical pandas operations
+- Determine the sequence of operations needed
+- Plan how to handle potential edge cases
+
+Step 4: Code Generation
+- Write clean, efficient pandas code that implements the plan
+- Format the code for readability
+- Ensure the code is complete and self-contained
+- Code generated should not have comments, import statements, explanations.
+- Code should be ready to procss with `exec()`
+
+Step 5: Safety Check
+- Verify the code doesn't attempt operations that might fail
+- Check for potential performance issues with large datasets
+- Ensure proper error handling for missing values, incorrect data types, etc.
+
+Important Guidelines:
+- The dataframe is already loaded as `df`.
+- The pandas code should start with: `result = ` and return either:
+    - A **pandas DataFrame/Series**, or 
     - A **Plotly figure object**, or
-    - A **scalar value** (e.g., sum, average, count)
-- The input dataframe is already loaded as `df`.
+    - A **scalar value** (e.g., sum, average, count). 
 - Always return only the code — no extra text.
+- DO NOT include any import statements, explanation, markdown, formatting, comments, or print statements in code.
+- USE .dt accessor to extract components (year, month, day) from datetime columns.
+- ENSURE all relevant columns are returned for DataFrame.
+- Use <HISTORY> content to provide continuity and build upon previous analyses. 
+- When the user asks follow-up questions or references previous results, your code should take <HISTORY> content into account what has already been analyzed and shown.
+- **Avoid SQL**: Use pandas syntax rather than pandas.read_sql() or other direct SQL execution.
+- **Variable Names**: Use descriptive variable names and avoid overwriting the input `df` variable.
+- **Chain of Thought**: Always use step-by-step reasoning in your approach, even for simple queries
+- Remember that your code will be executed using `exec()`, so it must be syntactically correct and secure. 
+- All outputs must be assigned to the `result` variable for proper execution.
 
-### VISUALIZATION RULES:
-- ALWAYS use Plotly (import plotly.express as px, import plotly.graph_objects as go) for charts.
-- Ensure all plots have proper titles, labels, legends, and color schemes.
-- Do not call `fig.show()` — just assign the figure to `result`.
+Visualization with Plotly
+When the user requests visualizations or charts:
+1. **Use Plotly Exclusively**: Always use plotly for all visualizations.
+2. **Return Complete Visualization Code**: Include all necessary code to create and configure the plot.
+3. **Figure Object Variable**: Always assign the figure to a variable named `fig`.
+4. **Final Assignment**: Always end visualization code with `result = fig` instead of `fig.show()`.
+5. **Chart Selection**: Choose appropriate chart types based on the analysis goals:
+   - Bar charts for comparisons across categories
+   - Line charts for time series
+   - Scatter plots for relationship analysis
+   - Pie charts for composition analysis
+   - Box plots for distribution comparison
+   - Heatmaps for correlation analysis
+6. **Layout Customization**: Always set appropriate titles, labels, and color schemes.
+7. **Interactivity**: Leverage plotly's interactive features (hover text, tooltips) when relevant.
+8. **Handle Large Datasets**: If necessary, sample or aggregate data to maintain visualization performance.
 
-### DATA HANDLING BEST PRACTICES:
+DATA HANDLING BEST PRACTICES:
 - When identifying rows with max/min values, preserve DataFrame structure using `.loc[[index]]` or `.iloc[[index]]`.
-- For **Series**, ensure they remain DataFrames by using `.to_frame().T`.
+- For **Series**, ensure they remain as DataFrames by using `.to_frame().T`.
 - When working with dates:
-    - Convert string columns to datetime using `pd.to_datetime()` before filtering.
     - Use `.dt` accessor to extract year/month/day from datetime columns.
+    - For example: "year_filter = df['date_column'].dt.year"
+    - For example: "month_filter = df['date_column'].dt.month"
+    - For example: "result = df[(df['column_name'] >= '2023-01-01') & (df['column_name'] < '2024-01-01')]"
+    - For example: "result = df[df['last_credit_date'].dt.year == 2025]"
     - Include date conversion logic in the generated code when needed.
 
-### CONTEXTUAL UNDERSTANDING:
+CONTEXTUAL UNDERSTANDING:
 - Previous interactions are stored in `<HISTORY>`. Use them to:
     - Understand references like "that column", "previous result", etc.
     - Maintain logical continuity between queries.
     - Build upon earlier results where relevant.
 
-### DATASET SCHEMA:
-Columns and descriptions are based on the uploaded file. Example schema includes:
-{columns_info}
-{column_descriptions}
-
-### SAMPLE OUTPUT TYPES:
+SAMPLE OUTPUT TYPES:
 - Query → Aggregation: e.g., total balance, average age
 - Query → Filtered DataFrame: e.g., customers from Damauli branch
 - Query → Visualization: e.g., plot account balances by branch
 
-### FINAL RULES:
-- Try to return results as DataFrames with appropriate columns.
-- If unsure how to interpret a query, return a simple but relevant filter.
-- Assume case sensitivity unless specified otherwise.
-- If asked for prompts, provide a list starting with: `Example Prompts:`
-- Do not include any code in example prompts.
 
-### HISTORY:
-Previous user queries and responses are stored in <HISTORY> tags. You must refer to this for context.
+If user query is for prompts or example of prompts.
+- Provide diverse example prompts starting with: `Example Prompts:`
+- Do not include any code inside `Example Prompts:`
 
-<HISTORY>
 {prompts["history"]}
+<HISTORY>
+{conversation_history}
 </HISTORY>
+
+The current date is {CURRENT_DATE}
     """
     # Create the system prompt
-    system_prompt_a = f"""{prompts['system_prompt_head']}
+    system_prompt = f"""
+    You are a coding assistant specialized in Python based data analysis using pandas.
+    You use a structured chain of thought process to ensure accuracy, safety, and explainability when analyzing data provided.
+    
+    Your task is to convert natural language prompts into valid and executable Pandas code, tailored to the provided dataset.
     The current date is {CURRENT_DATE}.
     
     IMPORTANT:
@@ -314,10 +377,8 @@ Previous user queries and responses are stored in <HISTORY> tags. You must refer
     ```python
     result = 
     ```
-    - The result must be a **Pandas DataFrame, Series, or visualization object**, depending on the task.
+    - The result must be a **Pandas DataFrame, Series, Numeric, or visualization object**, depending on the task.
     - DO NOT return array of values.
-    - DO NOT include fig.show() commands.
-
     
     When generating code for data visualization tasks:
     1. ALWAYS use Plotly (`import plotly.express as px`, `import plotly.graph_objects as go`) for all visualizations
@@ -354,8 +415,7 @@ Previous user queries and responses are stored in <HISTORY> tags. You must refer
     - DO NOT include any print statements or comments in the code.
     - DO NOT include code imports or library references in the code.
     - Assume case sensitivity during query formation.
-    - If the query is regarding prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. 
-    - Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.    
+    - If the query is regarding prompts, provide a list of 5-10 prompts that can be used to analyze the dataset. Do not include any code in the prompts and start the prompts list with the text 'Example Prompts:'.    
     """
 
     system_prompt_v3 = f"""
@@ -566,7 +626,7 @@ def execute_pandas_query(query_code, df):
         # Create a local scope with the dataframe
         result_type = None
         local_vars = {"df": df}
-        global_vars = {"px": px, "pd": pd, "np": np, "re": re}
+        global_vars = {"px": px, "go":go, "pd": pd, "np": np, "re": re} # go added
 
         # Execute the code in the local scope
         logger.info(f"Before exec >> {query_code[:15]}")
@@ -613,10 +673,10 @@ def execute_pandas_query(query_code, df):
             return None, NO_DATA_MESSAGE, None
 
         # For dataframes, check if empty
-        if isinstance(result, pd.DataFrame) and result.empty:
-            logger.info("Result is empty DataFrame")
-            return None, NO_DATA_MESSAGE, None
-        elif isinstance(result, pd.DataFrame):
+        # if isinstance(result, pd.DataFrame) and result.empty:
+            # logger.info("Result is empty DataFrame")
+            # return None, NO_DATA_MESSAGE, None
+        if isinstance(result, pd.DataFrame):
             logger.info("Result is dataframe")
             result_type = "dataframe"
         # elif isinstance(result, pd.Series):
@@ -1382,10 +1442,19 @@ def main():
                                     pandas_query,
                                     result, # TEMP
                                 )
+                            else:
+                                set_session_state(
+                                    "assistant",
+                                    "dataframe",
+                                    response_content,
+                                    prompt,
+                                    pandas_query,
+                                    result, # TEMP
+                                )
                         elif (result_type == "series"):
                             logger.info("<SERIES>")
                             # series to df
-                            temp_df = result.to_frame() #.T.reset_index(drop=True)
+                            temp_df = result.to_frame().T.reset_index() # .T.reset_index()
                             total_results = len(temp_df)
                             response_content = f"Found {total_results} matching records"
                             st.success(response_content)
@@ -1488,7 +1557,6 @@ def main():
                             #     pandas_query,
                             #     result,
                             # )
-
                         elif result_type == "text":
                             logger.info("<TEXT>")
                             # If the result is a text prompt, display it                                
