@@ -20,9 +20,6 @@ CURRENT_DATE = datetime.now().strftime("%Y-%m-%d, %H:%M:%S %p")
 
 BASE_URL = "http://localhost:11434/api/generate"
 
-
-# MODEL = "codellama:13b-code"
-# MODEL = "codellama:7b"
 MODEL = "qwen2.5-coder:7b"
 # MODEL = "gemma3:latest"
 # MODEL = "codegemma:7b-code-q4_K_M"
@@ -308,7 +305,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     column_descriptions = f"Descriptions of the columns:\n{column_descriptions}"
     sample_data = f"Dataset sample:\n{df_info.sample(5).to_markdown(index=False)}\n"
     
-    conversation_history = set_conversation_history(3).strip()
+    conversation_history = set_conversation_history(3).strip() # Conversation history 
 
     system_prompt = f"""
     You are a coding assistant (name "OneLLM") expert in Python based data analysis using pandas.
