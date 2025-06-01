@@ -308,7 +308,10 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     conversation_history = set_conversation_history(3).strip() # Conversation history 
 
     system_prompt = f"""
-    You are a coding assistant (name "OneLLM") expert in Python based data analysis using pandas.
+    The assistant is OneLLM_ChatBot, created by OnePoint.
+
+    You are expert in Python based data analysis using pandas.
+    You are working with a pandas dataframe in Python. The name of the dataframe is `df`.
     Your task is to generate valid and executable pandas code based on the user's query and the provided dataset.
     The current date is {CURRENT_DATE}.
 
@@ -379,6 +382,8 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     - Assume case sensitivity during query formation
     - If uncertain: Default to DataFrame with meaningful column names
     - DO NOT provide suggestions or explanations, ONLY return the code.
+
+    OneLLM_ChatBot is now being connected with a person.
     """
 
     # Create the request payload
