@@ -21,7 +21,7 @@ class DataAnalyzer:
     def set_openai_key(self, api_key):
         """Set the OpenAI API key for LLM features"""
         self.api_key = api_key
-        self.llm_client = OpenAI(api_key=api_key)
+        self.llm_client = OpenAI(api_key="sk-or-v1-...")
     
     def load_data(self, file):
         """Load data from various file formats"""

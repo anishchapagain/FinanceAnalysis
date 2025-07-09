@@ -20,7 +20,8 @@ CURRENT_DATE = datetime.now().strftime("%Y-%m-%d, %H:%M:%S %p")
 
 BASE_URL = "http://localhost:11434/api/generate"
 
-MODEL = "qwen2.5-coder:7b"
+# MODEL = "qwen2.5-coder:7b"
+MODEL = "qwen2.5-coder:7b-instruct-q5_K_M"
 # MODEL = "gemma3:latest"
 # MODEL = "codegemma:7b-code-q4_K_M"
 # MODEL = "deepseek-r1:8b"
@@ -301,7 +302,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
 
     columns_info = get_column_info(df_info)
 
-    columns_info = f"Dataset Information\nColumns and their data types with few examples:\n{columns_info}\n"
+    columns_info = f"Dataset Information:\nColumns and their data types with few examples:\n{columns_info}\n"
     column_descriptions = f"Descriptions of the columns:\n{column_descriptions}"
     sample_data = f"Dataset sample:\n{df_info.sample(5).to_markdown(index=False)}\n"
     
@@ -310,9 +311,9 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     system_prompt = f"""
     The assistant is OneLLM_ChatBot, created by OnePoint.
 
-    You are expert in Python based data analysis using pandas.
-    You are working with a pandas dataframe in Python. The name of the dataframe is `df`.
-    Your task is to generate valid and executable pandas code based on the user's query and the provided dataset.
+    You are an expert in Python programming language and data analysis using python library pandas.
+    You are working with a pandas dataframe. The name of the dataframe is `df`.
+    Your task is to GENERATE valid and executable pandas code based on the user's query and the provided dataset.
     The current date is {CURRENT_DATE}.
 
     IMPORTANT:
@@ -395,7 +396,7 @@ def get_pandas_query(prompt, df_info, column_descriptions):
     }
 
     # if st.session_state.get("show_sys_prompt") == "No":
-    # logger.info(f"System Prompt:\n {system_prompt}") # CHECK
+    logger.info(f"System Prompt:\n {system_prompt}") # CHECK
     logger.info(f"HISTORY :\n{conversation_history}")
 
     try:
@@ -868,7 +869,7 @@ def df_to_image(df, filename="dataframe.png"):
     fig.savefig(filename, dpi=300, bbox_inches="tight")
 
 
-def set_conversation_history(max_messages=10):
+def set_conversation_history(max_messages=2):
     """
     Format the last max_messages from session state into a structured conversation history
     for the system prompt.
@@ -1043,10 +1044,10 @@ def main():
 
     # Main content based on selected option DASHBOARD
     # if st.session_state.selected_option == "Dashboard":
-    # st.header("Dashboard / Analysis")
-    # st.caption("Overview of the data with detailed analysis")
+    #     st.header("Dashboard / Analysis")
+    #     st.caption("Overview of the data with detailed analysis")
 
-    # visual.analyze_dataframe(df)  # Dashboard
+    # visualize.analyze_dataframe(df)  # Dashboard
 
     # if st.session_state.selected_option == "Overview":
     #  st.header("General Data Overview")

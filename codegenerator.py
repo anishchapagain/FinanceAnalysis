@@ -53,7 +53,7 @@ def generate_code_with_local_llm(prompt, model="qwen2.5-coder:7b"):
         "prompt": conversation_context,
         "stream": False,
         "options": {
-            "temperature": 0.1,
+            "temperature": 0.2,
         }
     }
 
@@ -190,9 +190,10 @@ if prompt := st.chat_input("What code would you like me to generate?"):
 
 # Footer with instructions
 st.caption("""
----
 ### How to use this LocalLLM Chat Assistant:
 1. Make sure LocalLLM is installed and connected.
-2. Ask for code generation, chat completion or necessary details by describing what you need
-3. The assistant will generate code, provide assistanship based on your prompt]
+2. Ask for code generation, chat completion or necessary details by describing what you need.
+3. The assistant will generate code, provide assistantship based on your prompt.
+4. You can save and load conversations for future reference.
+5. Use the sidebar to manage settings and conversations.
 """)
