@@ -3,6 +3,20 @@
 # Financial Data Analysis Tool
 A powerful Python-based application for analyzing financial and business data through interactive visualizations, AI-powered insights, and automated reporting.
 
+## FinanceAI Agent
+```mermaid
+graph TD
+  A[User Upload] --> B[Data Loader]
+  B --> C[Schema Extractor]
+  D[User Prompt] --> E[Prompt Engine]
+  C --> E
+  F[Memory] --> E
+  E --> G[Code Generator]
+  G --> H[Safe Executor]
+  H --> I[Result Formatter]
+  I --> J[Response to User]
+```
+
 ## Features
 - 📊 Interactive data visualizations
 - 🤖 AI-powered data analysis
